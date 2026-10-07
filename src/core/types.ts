@@ -1,5 +1,13 @@
 /** Interfaces between the pure core and the game. The bedrock/ layer implements these. */
 
+/** Minimal key/value persistence (world dynamic properties in game). */
+export interface KV {
+  get(key: string): string | undefined;
+  set(key: string, value: string | undefined): void;
+  keys(): string[];
+  totalBytes(): number;
+}
+
 export interface Vec3 {
   x: number;
   y: number;
@@ -58,4 +66,66 @@ export function dimensionIndex(id: string): number {
     default:
       return 3;
   }
+}
+
+/** Molang variable names shared by the script and the LOD particle definitions. */
+export const MOLANG = {
+  ox: 'variable.ox',
+  oy: 'variable.oy',
+  oz: 'variable.oz',
+  a: 'variable.sa',
+  b: 'variable.sb',
+  r: 'variable.cr',
+  g: 'variable.cg',
+  bl: 'variable.cb',
+  life: 'variable.life',
+  l0: 'variable.l0',
+  dl: 'variable.dl',
+  grow: 'variable.grow',
+} as const;
+
+export const EFFECT_TOP = 'dl:lod_top';
+export const EFFECT_WALL = 'dl:lod_wall';
+
+export interface HostPlayer {
+  readonly id: string;
+  readonly name: string;
+  isValid(): boolean;
+  dimension(): HostDimension;
+  location(): Vec3;
+  eye(): Vec3;
+  viewDirection(): Vec3;
+  /** Flying or gliding. */
+  isFlying(): boolean;
+  isOperator(): boolean;
+  /** Spawns a particle only this player sees. Throws when the location is not usable. */
+  spawnParticle(effect: string, at: Vec3, vars: Readonly<Record<keyof typeof MOLANG, number>>): void;
+  /** Runs a command as this player (fog). Returns false on failure. */
+  runCommand(cmd: string): boolean;
+  actionBar(text: string): void;
+  tell(text: string): void;
+  /** Client graphics mode name when known (e.g. 'Deferred' for Vibrant Visuals). */
+  graphicsMode(): string | undefined;
+  /** Client memory tier 0..4 when known. */
+  memoryTier(): number | undefined;
+  /** Device max render distance in chunks when known. */
+  maxRenderDistance(): number | undefined;
+  /** Dynamic property storage on the player. */
+  loadData(key: string): string | undefined;
+  saveData(key: string, value: string | undefined): void;
+}
+
+/** World-level services the core needs. */
+export interface Host {
+  players(): HostPlayer[];
+  /** 0 overworld, 1 nether, 2 the end. */
+  dimension(index: number): HostDimension | undefined;
+  readonly kv: KV;
+  currentTick(): number;
+  /** Ticks since sunrise 0..24000. */
+  timeOfDay(): number;
+  dayCycle(): boolean;
+  /** Milliseconds, for time budgets. */
+  clock(): number;
+  log(message: string): void;
 }

@@ -2,13 +2,9 @@ import { ChunkLod, sameContent } from './lod/chunk-lod';
 import { CodecError, REGION_CHUNKS, decodeRegion, encodeRegion } from './lod/codec';
 import { Lru } from './util/lru';
 
-/** Minimal key/value persistence (world dynamic properties in game). */
-export interface KV {
-  get(key: string): string | undefined;
-  set(key: string, value: string | undefined): void;
-  keys(): string[];
-  totalBytes(): number;
-}
+import type { KV } from './types';
+
+export type { KV };
 
 export interface StoreOptions {
   /** Current base sample resolution (blocks). */
@@ -75,6 +71,8 @@ export class LodStore {
   private corrupt = 0;
   /** Incremented whenever any chunk content changes. */
   dataEpoch = 0;
+  /** Chunks sampled before this tick are stale (sampling options changed). */
+  private staleBefore = -Infinity;
 
   constructor(
     private readonly kv: KV,
@@ -139,8 +137,13 @@ export class LodStore {
     if (this.staleChunks.has(chunkKey(dim, cx, cz))) return true;
     const lod = this.get(dim, cx, cz);
     if (!lod) return true;
-    if (lod.res !== this.opts.res || lod.sampledAt < 0) return true;
+    if (lod.res !== this.opts.res || lod.sampledAt < 0 || lod.sampledAt < this.staleBefore) return true;
     return now - lod.sampledAt > maxAge;
+  }
+
+  /** Marks everything sampled before `tick` as stale (e.g. the vegetation mode changed). */
+  invalidateBefore(tick: number): void {
+    this.staleBefore = tick;
   }
 
   /** Writes up to `maxRegions` dirty regions. Returns the number written. */
