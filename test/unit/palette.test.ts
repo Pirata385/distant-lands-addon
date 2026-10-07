@@ -86,6 +86,12 @@ test('self-cull block list is namespaced, unique and covers common surfaces', ()
   assert.ok(!set.has('minecraft:air'));
 });
 
+test('self-cull list stays short because the client checks it per particle', () => {
+  assert.ok(EXPIRE_BLOCKS.length <= 128, `length ${EXPIRE_BLOCKS.length}`);
+  assert.ok(EXPIRE_BLOCKS.includes('minecraft:orange_terracotta'), 'badlands terracotta is natural terrain');
+  assert.ok(!EXPIRE_BLOCKS.includes('minecraft:oak_stairs'), 'building blocks are not listed');
+});
+
 test('colour helpers stay within byte range', () => {
   assert.deepEqual(unpack(scale(rgb(200, 100, 50), 2)), { r: 255, g: 200, b: 100 });
   assert.deepEqual(unpack(mix(rgb(0, 0, 0), rgb(255, 255, 255), 0.5)), { r: 128, g: 128, b: 128 });

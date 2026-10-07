@@ -165,34 +165,28 @@ export function isLava(typeId: string): boolean {
 const EXPIRE_NATURAL = [
   'grass_block', 'dirt', 'coarse_dirt', 'podzol', 'mycelium', 'dirt_with_roots', 'mud', 'muddy_mangrove_roots',
   'mangrove_roots', 'moss_block', 'pale_moss_block', 'farmland', 'grass_path', 'dirt_path', 'clay', 'gravel', 'sand',
-  'red_sand', 'suspicious_sand', 'suspicious_gravel', 'sandstone', 'red_sandstone', 'stone', 'granite', 'diorite',
-  'andesite', 'deepslate', 'tuff', 'calcite', 'dripstone_block', 'cobblestone', 'mossy_cobblestone', 'smooth_basalt',
-  'basalt', 'blackstone', 'hardened_clay', 'terracotta', 'snow', 'snow_layer', 'powder_snow', 'ice', 'packed_ice',
-  'blue_ice', 'water', 'flowing_water', 'lava', 'flowing_lava', 'magma', 'obsidian', 'crying_obsidian', 'bedrock',
-  'netherrack', 'end_stone', 'cactus', 'pumpkin', 'melon_block', 'hay_block', 'bamboo', 'brown_mushroom_block',
-  'red_mushroom_block', 'mushroom_stem', 'sea_lantern', 'prismarine', 'dark_prismarine', 'prismarine_bricks',
-  'sponge', 'wet_sponge', 'bone_block', 'amethyst_block', 'budding_amethyst', 'coal_ore', 'iron_ore', 'copper_ore',
-  'emerald_ore', 'gold_ore', 'stone_bricks', 'mossy_stone_bricks', 'cracked_stone_bricks', 'smooth_stone',
-  'brick_block', 'bricks', 'cut_sandstone', 'smooth_sandstone', 'chiseled_sandstone', 'cut_red_sandstone',
-  'smooth_red_sandstone', 'purpur_block', 'quartz_block', 'glass', 'beehive', 'bee_nest', 'azalea',
-  'flowering_azalea', 'tube_coral_block', 'brain_coral_block', 'bubble_coral_block', 'fire_coral_block',
-  'horn_coral_block', 'dead_tube_coral_block', 'dead_brain_coral_block', 'dead_bubble_coral_block',
-  'dead_fire_coral_block', 'dead_horn_coral_block', 'pointed_dripstone', 'moss_carpet', 'pale_moss_carpet',
-  'resin_block', 'creaking_heart', 'packed_mud', 'mud_bricks', 'crimson_nylium', 'warped_nylium', 'soul_sand',
-  'soul_soil', 'end_stone_bricks',
+  'red_sand', 'sandstone', 'red_sandstone', 'stone', 'granite', 'diorite', 'andesite', 'deepslate', 'tuff', 'calcite',
+  'dripstone_block', 'cobblestone', 'mossy_cobblestone', 'hardened_clay', 'terracotta', 'snow', 'snow_layer',
+  'powder_snow', 'ice', 'packed_ice', 'blue_ice', 'water', 'flowing_water', 'lava', 'flowing_lava', 'magma',
+  'obsidian', 'bedrock', 'netherrack', 'end_stone', 'cactus', 'pumpkin', 'melon_block', 'bamboo',
+  'brown_mushroom_block', 'red_mushroom_block', 'mushroom_stem', 'azalea', 'flowering_azalea', 'moss_carpet',
+  'pale_moss_carpet', 'packed_mud', 'tube_coral_block', 'brain_coral_block', 'bubble_coral_block',
+  'fire_coral_block', 'horn_coral_block', 'pointed_dripstone',
 ];
 
-const EXPIRE_PATTERN =
-  /_(leaves|log|wood|planks|terracotta|concrete|concrete_powder|wool|stairs|slab|bricks|glass|ore)$|^azalea_leaves/;
+/** Natural surface blocks only: the client checks this list for every LOD particle, so it must stay short. */
+const EXPIRE_PATTERN = /_(leaves|terracotta)$|^azalea_leaves/;
 
 function buildExpireList(): string[] {
   const known = getTable();
   const out = new Set<string>();
   for (const name of EXPIRE_NATURAL) if (known.has(name)) out.add(`minecraft:${name}`);
   for (const name of known.keys()) {
-    if (EXPIRE_PATTERN.test(name) && !isDecoration(`minecraft:${name}`)) out.add(`minecraft:${name}`);
+    if (EXPIRE_PATTERN.test(name) && !name.startsWith('glazed') && !name.endsWith('glazed_terracotta')) {
+      out.add(`minecraft:${name}`);
+    }
   }
-  // Snow layers and the flowing liquids have no top texture of their own but are real terrain.
+  // Snow layers and liquids are real terrain even where the palette has no texture for them.
   for (const name of ['snow_layer', 'flowing_water', 'flowing_lava', 'water', 'lava']) out.add(`minecraft:${name}`);
   return [...out].sort();
 }
