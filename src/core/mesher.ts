@@ -2,7 +2,7 @@ import { F_FOLIAGE, F_SNOW, F_WATER, NO_DATA } from './flags';
 import { STYLE_CARTO, mix, scale, styleColor } from './palette';
 import type { Tile } from './planner';
 
-/** Floats per quad: kind, x, y, z, a, b, r, g, b, level. */
+/** Floats per quad: kind, x, y, z, a, b, r, g, b, level. x/z are relative to the tile origin (float32-safe). */
 export const QUAD_STRIDE = 10;
 /** Horizontal top face: a = b = half size. */
 export const K_TOP = 0;
@@ -124,9 +124,9 @@ export function meshTile(tile: Tile, lookup: CellLookup, style: StyleParams): Fl
       if (hMin <= h - 1) {
         push(
           K_WALL,
-          tile.x0 + i * s + s / 2,
+          i * s + s / 2,
           (h + hMin) / 2 - TOP_OFFSET,
-          tile.z0 + j * s + s / 2,
+          j * s + s / 2,
           s / 2,
           (h - hMin) / 2,
           wallColor(color, f),
@@ -188,7 +188,7 @@ export function meshTile(tile: Tile, lookup: CellLookup, style: StyleParams): Fl
   const emitTop = (i0: number, j0: number, m: number, idx: number): void => {
     const h = hs[gridIndex(idx)];
     const size = m * s;
-    push(K_TOP, tile.x0 + i0 * s + size / 2, h - TOP_OFFSET, tile.z0 + j0 * s + size / 2, size / 2, size / 2, mergedColor[idx], level);
+    push(K_TOP, i0 * s + size / 2, h - TOP_OFFSET, j0 * s + size / 2, size / 2, size / 2, mergedColor[idx], level);
   };
   const root = region(0, 0, n);
   if (root >= 0) emitTop(0, 0, n, root);

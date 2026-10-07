@@ -42,8 +42,8 @@ test('a flat uniform chunk collapses into one top quad', () => {
   const q = quads(meshTile(tile(32, -16, 16, 4), look, STYLE));
   assert.equal(q.length, 1);
   assert.equal(q[0].kind, K_TOP);
-  assert.equal(q[0].x, 40);
-  assert.equal(q[0].z, -8);
+  assert.equal(q[0].x, 8, 'x is relative to the tile origin');
+  assert.equal(q[0].z, 8);
   assert.ok(Math.abs(q[0].y - (70 - TOP_OFFSET)) < 1e-5);
   assert.equal(q[0].a, 8);
   assert.equal(q[0].b, 8);
