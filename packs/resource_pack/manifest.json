@@ -1,0 +1,26 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "pack.name",
+    "description": "pack.description",
+    "uuid": "9c226188-8be6-4efc-bff4-716c06f792c4",
+    "version": [1, 0, 0],
+    "min_engine_version": [1, 26, 0]
+  },
+  "modules": [
+    {
+      "description": "Distant Lands LOD particles, fogs and textures",
+      "type": "resources",
+      "uuid": "f5c3b808-e37d-4cbd-aad7-eb20a405ccaa",
+      "version": [1, 0, 0]
+    }
+  ],
+  "dependencies": [
+    { "uuid": "129de76b-5c03-4b99-bb49-df07690eb09c", "version": [1, 0, 0] }
+  ],
+  "metadata": {
+    "authors": ["Distant Lands contributors"],
+    "license": "MIT",
+    "product_type": "addon"
+  }
+}

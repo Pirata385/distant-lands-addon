@@ -1,0 +1,36 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "pack.name",
+    "description": "pack.description",
+    "uuid": "129de76b-5c03-4b99-bb49-df07690eb09c",
+    "version": [1, 0, 0],
+    "min_engine_version": [1, 26, 0]
+  },
+  "modules": [
+    {
+      "description": "Distant Lands data (items, recipes)",
+      "type": "data",
+      "uuid": "774b3b46-8b58-4ebd-a246-ed7d76f75ab3",
+      "version": [1, 0, 0]
+    },
+    {
+      "description": "Distant Lands LOD engine",
+      "type": "script",
+      "language": "javascript",
+      "uuid": "66271a88-7947-458a-a1bb-12f147ef4ad2",
+      "version": [1, 0, 0],
+      "entry": "scripts/main.js"
+    }
+  ],
+  "dependencies": [
+    { "uuid": "9c226188-8be6-4efc-bff4-716c06f792c4", "version": [1, 0, 0] },
+    { "module_name": "@minecraft/server", "version": "2.5.0" },
+    { "module_name": "@minecraft/server-ui", "version": "2.0.0" }
+  ],
+  "metadata": {
+    "authors": ["Distant Lands contributors"],
+    "license": "MIT",
+    "product_type": "addon"
+  }
+}
