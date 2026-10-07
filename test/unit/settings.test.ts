@@ -127,3 +127,16 @@ test('player keys cannot be set on the world layer and vice versa', () => {
   assert.throws(() => s.set('pHud', true));
   assert.throws(() => s.setPlayer('p', 'maxDistance', 10));
 });
+
+test('resetWorld restores every world default and persists it', () => {
+  const st = new MemStorage();
+  const s = new Settings(st);
+  s.load();
+  s.applyPreset('ultra');
+  s.set('style', 3);
+  s.resetWorld();
+  for (const def of SETTINGS_SCHEMA) if (def.scope === 'world') assert.deepEqual(s.get(def.key), def.default, def.key);
+  const s2 = new Settings(st);
+  s2.load();
+  assert.equal(s2.get('maxDistance'), defByKey('maxDistance').default);
+});

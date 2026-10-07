@@ -218,6 +218,13 @@ export class Settings {
     return true;
   }
 
+  /** Restores all world settings to their defaults. */
+  resetWorld(): void {
+    this.world = defaults('world');
+    this.version++;
+    this.storage.saveWorld(JSON.stringify(this.world));
+  }
+
   applyPreset(name: string): void {
     const preset = PRESETS[name];
     if (!preset) throw new Error(`unknown preset ${name}`);
