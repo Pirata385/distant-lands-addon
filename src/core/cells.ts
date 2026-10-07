@@ -66,6 +66,39 @@ export class StoreLookup implements CellLookup {
     return true;
   }
 
+  minHeight(size: number, x: number, z: number): number | undefined {
+    if (size > 16) {
+      const half = size / 2;
+      let best: number | undefined;
+      for (let dz = 0; dz < 2; dz++) {
+        for (let dx = 0; dx < 2; dx++) {
+          const m = this.minHeight(half, x + dx * half, z + dz * half);
+          if (m !== undefined && (best === undefined || m < best)) best = m;
+        }
+      }
+      return best;
+    }
+    const cx = Math.floor(x / 16);
+    const cz = Math.floor(z / 16);
+    const lod = this.chunk(cx, cz);
+    if (!lod) return undefined;
+    const base = lod.base;
+    const step = base.size;
+    const lx = x - cx * 16;
+    const lz = z - cz * 16;
+    const i0 = Math.floor(lx / step);
+    const j0 = Math.floor(lz / step);
+    const span = Math.max(1, Math.floor(size / step));
+    let best: number | undefined;
+    for (let j = j0; j < j0 + span && j < base.n; j++) {
+      for (let i = i0; i < i0 + span && i < base.n; i++) {
+        const h = base.height[i + j * base.n];
+        if (h !== NO_DATA && (best === undefined || h < best)) best = h;
+      }
+    }
+    return best;
+  }
+
   private big(size: number, x: number, z: number, out: CellData, depth: number): boolean {
     const half = size / 2;
     const sc = scratch[depth];

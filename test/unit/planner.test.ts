@@ -128,3 +128,16 @@ test('planning yields for time slicing and quad estimates scale with quality', (
   const hi = estimateQuads(plan({ px: 0, pz: 0, rinChunks: 8, routChunks: 32, res: 4, quality: 22 }));
   assert.ok(hi > lo * 2, `lo=${lo} hi=${hi}`);
 });
+
+test('chunk tiles just outside the real-terrain radius are marked conservative', () => {
+  const tiles = plan({ px: 8, pz: 8, rinChunks: 5, routChunks: 20, res: 4, quality: 12, conservativeChunks: 2 });
+  let marked = 0;
+  for (const t of tiles) {
+    const cx = t.x0 / 16;
+    const cz = t.z0 / 16;
+    const inBand = t.size === 16 && cx * cx + cz * cz <= 7 * 7;
+    assert.equal(!!t.conservative, inBand, `tile ${t.key}`);
+    if (inBand) marked++;
+  }
+  assert.ok(marked > 20);
+});

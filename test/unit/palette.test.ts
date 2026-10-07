@@ -90,6 +90,9 @@ test('self-cull list stays short because the client checks it per particle', () 
   assert.ok(EXPIRE_BLOCKS.length <= 128, `length ${EXPIRE_BLOCKS.length}`);
   assert.ok(EXPIRE_BLOCKS.includes('minecraft:orange_terracotta'), 'badlands terracotta is natural terrain');
   assert.ok(!EXPIRE_BLOCKS.includes('minecraft:oak_stairs'), 'building blocks are not listed');
+  for (const log of ['oak_log', 'spruce_log', 'birch_log', 'jungle_log', 'acacia_log', 'dark_oak_log', 'mangrove_log', 'cherry_log']) {
+    assert.ok(EXPIRE_BLOCKS.includes(`minecraft:${log}`), `${log}: walls inside tree trunks must self-cull`);
+  }
 });
 
 test('colour helpers stay within byte range', () => {

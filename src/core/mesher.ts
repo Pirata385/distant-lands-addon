@@ -21,6 +21,8 @@ export interface CellData {
 export interface CellLookup {
   /** Fills `out` with the cell of `size` blocks whose min corner is (x, z); false when there is no data. */
   cell(size: number, x: number, z: number, out: CellData): boolean;
+  /** Lowest sampled height inside the cell (conservative tiles), when available. */
+  minHeight?(size: number, x: number, z: number): number | undefined;
 }
 
 export interface StyleParams {
@@ -81,7 +83,12 @@ export function meshTile(tile: Tile, lookup: CellLookup, style: StyleParams): Fl
       if (corner) continue;
       if (lookup.cell(s, tile.x0 + i * s, tile.z0 + j * s, tmp)) {
         const k = i + 1 + (j + 1) * w;
-        hs[k] = tmp.h;
+        let h = tmp.h;
+        if (tile.conservative && !(tmp.f & F_WATER) && lookup.minHeight) {
+          const m = lookup.minHeight(s, tile.x0 + i * s, tile.z0 + j * s);
+          if (m !== undefined && m < h) h = m;
+        }
+        hs[k] = h;
         cs[k] = tmp.c;
         fs[k] = tmp.f;
         ds[k] = tmp.d;

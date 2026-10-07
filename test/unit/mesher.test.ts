@@ -152,3 +152,19 @@ test('store lookup serves chunk levels, finer requests and aggregated big cells'
   assert.equal(look.cell(64, 0, 0, out), true, 'partial data still aggregates');
   assert.ok(out.h !== NO_DATA);
 });
+
+test('conservative tiles use the lowest sample of each cell', () => {
+  const store = new LodStore(new MemKV(), { res: 4, memoryChunks: 4096, persist: false });
+  const lod = new ChunkLod(4);
+  const hs = [70, 74, 66, 90];
+  for (let k = 0; k < 16; k++) lod.base.height[k] = hs[k % 4];
+  lod.base.color.fill(rgb(80, 140, 60));
+  lod.buildMips();
+  store.put(0, 0, 0, lod, 1);
+  const look = new StoreLookup(store, 0);
+  const t: Tile = { key: '0,0,16', x0: 0, z0: 0, size: 16, cell: 8, dist: 100 };
+  const normal = quads(meshTile(t, look, STYLE)).filter((v) => v.kind === K_TOP);
+  const safe = quads(meshTile({ ...t, conservative: true }, look, STYLE)).filter((v) => v.kind === K_TOP);
+  assert.ok(Math.min(...safe.map((v) => v.y)) < Math.min(...normal.map((v) => v.y)));
+  for (const v of safe) assert.ok(Math.abs(v.y - (66 - TOP_OFFSET)) < 1e-5 || Math.abs(v.y - (70 - TOP_OFFSET)) < 1e-5, `y=${v.y}`);
+});

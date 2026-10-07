@@ -171,7 +171,8 @@ const EXPIRE_NATURAL = [
   'obsidian', 'bedrock', 'netherrack', 'end_stone', 'cactus', 'pumpkin', 'melon_block', 'bamboo',
   'brown_mushroom_block', 'red_mushroom_block', 'mushroom_stem', 'azalea', 'flowering_azalea', 'moss_carpet',
   'pale_moss_carpet', 'packed_mud', 'tube_coral_block', 'brain_coral_block', 'bubble_coral_block',
-  'fire_coral_block', 'horn_coral_block', 'pointed_dripstone',
+  'fire_coral_block', 'horn_coral_block', 'pointed_dripstone', 'oak_log', 'spruce_log', 'birch_log', 'jungle_log',
+  'acacia_log', 'dark_oak_log', 'mangrove_log', 'cherry_log', 'pale_oak_log', 'crimson_stem', 'warped_stem',
 ];
 
 /** Natural surface blocks only: the client checks this list for every LOD particle, so it must stay short. */

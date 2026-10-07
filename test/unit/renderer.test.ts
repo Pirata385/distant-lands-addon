@@ -200,3 +200,16 @@ test('sky light follows the day cycle', () => {
   const off = lightParams({ timeOfDay: 18000, rain: 0, thunder: 0, dayCycle: true, enabled: false });
   assert.deepEqual(off, { l0: 1, dl: 0 });
 });
+
+test('tiles the player is approaching get lifetimes that end when real terrain arrives', () => {
+  const view = new PlayerView();
+  const sink = new RecordingSink();
+  const p = params({ velocity: { x: 10, y: 0, z: 0 }, innerRadius: 96 });
+  setup(view, [tileAt(160, 0), tileAt(-176, 0)], p);
+  run(view, sink, p, 1, 10);
+  const front = sink.spawned.find((s) => s.emitter.x + s.vars.ox > 0)!;
+  const back = sink.spawned.find((s) => s.emitter.x + s.vars.ox < 0)!;
+  // Front tile's nearest edge is at x=160: 64 blocks beyond the 96-block radius at 10 b/s -> ~6.4 s.
+  assert.ok(front.vars.life < 8 && front.vars.life >= 3, `front life ${front.vars.life}`);
+  assert.equal(back.vars.life, p.refresh + LIFE_MARGIN);
+});

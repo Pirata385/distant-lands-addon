@@ -22,6 +22,10 @@ export const PLAYER_KEY = 'dl:player';
 
 /** LOD starts this many chunks inside the detected vanilla radius; overlapping quads self-cull. */
 const INNER_OVERLAP = 1;
+/** Chunks beyond the LOD inner edge drawn with conservative heights (stay under the real surface). */
+const CONSERVATIVE_BAND = 2;
+/** Faster than this (blocks/s) between updates is treated as a teleport, not movement. */
+const TELEPORT_SPEED = 120;
 const PLAN_MOVE_BLOCKS = 8;
 const PLAN_INTERVAL = 40;
 const RADIUS_INTERVAL = 60;
@@ -51,6 +55,9 @@ interface PlayerState {
   eye: Vec3;
   dir: Vec3;
   flying: boolean;
+  /** Smoothed horizontal velocity (blocks/s). */
+  vel: Vec3;
+  velTick: number;
   loadedRadius: number;
   radiusTick: number;
   needsPlan: boolean;
@@ -288,6 +295,8 @@ export class App {
       eye: { x: 0, y: 0, z: 0 },
       dir: { x: 0, y: 0, z: 1 },
       flying: false,
+      vel: { x: 0, y: 0, z: 0 },
+      velTick: -1,
       loadedRadius: 0,
       radiusTick: -Infinity,
       needsPlan: true,
@@ -337,6 +346,8 @@ export class App {
       s.dimIndex = dim.index;
       s.loadedRadius = 0;
       s.radiusTick = -Infinity;
+      s.velTick = -1;
+      s.vel = { x: 0, y: 0, z: 0 };
       s.needsPlan = true;
     }
     s.eff = this.settings.effective(s.id);
@@ -349,7 +360,16 @@ export class App {
     }
     if (!s.wasEnabled) s.needsPlan = true;
     s.wasEnabled = true;
-    s.pos = s.p.location();
+    const pos = s.p.location();
+    if (s.velTick >= 0 && this.tickNo > s.velTick) {
+      const dt = (this.tickNo - s.velTick) / 20;
+      let vx = (pos.x - s.pos.x) / dt;
+      let vz = (pos.z - s.pos.z) / dt;
+      if (Math.hypot(vx, vz) > TELEPORT_SPEED) vx = vz = 0;
+      s.vel = { x: s.vel.x * 0.4 + vx * 0.6, y: 0, z: s.vel.z * 0.4 + vz * 0.6 };
+    }
+    s.velTick = this.tickNo;
+    s.pos = pos;
     s.eye = s.p.eye();
     s.dir = s.p.viewDirection();
     s.flying = s.p.isFlying();
@@ -415,6 +435,8 @@ export class App {
       l0: this.light.l0,
       dl: this.light.dl,
       share,
+      velocity: s.vel,
+      innerRadius: s.loadedRadius * 16,
     };
   }
 
@@ -456,7 +478,7 @@ export class App {
       v(c0x - 1, c0z + k);
       v(c0x + span, c0z + k);
     }
-    return `${t.cell}:${h}`;
+    return `${t.cell}${t.conservative ? 'c' : ''}:${h}`;
   }
 
   private nextPlan(): Generator<void, boolean, void> | undefined {
@@ -484,6 +506,7 @@ export class App {
         res: this.res,
         quality: s.eff.quality * s.qMult,
         prev: s.prevCells,
+        conservativeChunks: CONSERVATIVE_BAND,
       });
       if (this.states.get(s.id) !== s || s.dimIndex !== dimIndex || !s.enabled) return false;
       const sigs = new Map<string, string>();

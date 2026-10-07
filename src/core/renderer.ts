@@ -57,6 +57,25 @@ export interface ViewParams {
   dl: number;
   /** Spawns per second this player can expect on average. */
   share: number;
+  /** Player velocity (blocks/s); tiles being approached get lifetimes that end when real terrain arrives. */
+  velocity?: Vec3;
+  /** Radius (blocks) of the real terrain around the player. */
+  innerRadius?: number;
+}
+
+/** Shortest lifetime given to a tile the player is approaching. */
+export const MIN_LIFE = 3;
+
+/** Seconds until the player, moving at `velocity`, has the tile's nearest point inside the real-terrain radius. */
+function timeToOvertake(t: Tile, p: ViewParams): number {
+  const v = p.velocity;
+  if (!v || p.innerRadius === undefined) return Infinity;
+  const nx = Math.max(t.x0, Math.min(p.eye.x, t.x0 + t.size)) - p.eye.x;
+  const nz = Math.max(t.z0, Math.min(p.eye.z, t.z0 + t.size)) - p.eye.z;
+  const d = Math.hypot(nx, nz);
+  const toward = d > 0 ? (v.x * nx + v.z * nz) / d : Math.hypot(v.x, v.z);
+  if (toward <= 0.5) return Infinity;
+  return Math.max(0, d - p.innerRadius) / toward;
 }
 
 export class TileState {
@@ -274,6 +293,11 @@ export class PlayerView {
     this.currentStart = now;
     this.currentRefresh = this.refreshInterval(p);
     this.currentLife = this.currentRefresh + LIFE_MARGIN;
+    const overtake = timeToOvertake(s.tile, p);
+    if (overtake + 1 < this.currentLife) {
+      this.currentLife = Math.max(MIN_LIFE, overtake + 1);
+      this.currentRefresh = Math.max(1, this.currentLife - URGENT_WINDOW - 0.5);
+    }
     this.currentGrow = fresh && p.transitions ? GROW_SECONDS : 0;
     this.placeEmitter(s, p);
     return true;

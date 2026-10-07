@@ -20,6 +20,8 @@ export interface PlanInput {
   quality: number;
   /** Previous plan: tile key -> cell size, for hysteresis. */
   prev?: ReadonlyMap<string, number>;
+  /** Chunk tiles within rin + this many chunks use conservative (lowest-sample) heights. */
+  conservativeChunks?: number;
 }
 
 export interface Tile {
@@ -33,6 +35,11 @@ export interface Tile {
   cell: number;
   /** Distance from the player to the tile centre, in blocks. */
   dist: number;
+  /**
+   * Near the real-terrain edge: heights are the lowest sample per cell, so faces stay under the real surface
+   * (and self-cull) when the player walks into them.
+   */
+  conservative?: boolean;
 }
 
 /** Desired LOD cell size at distance `d` (blocks): res·2^⌊log2(d / (res·q))⌋, clamped to [res, 64]. */
@@ -66,6 +73,8 @@ export function* planTiles(input: PlanInput): Generator<void, Tile[], void> {
   const pcz = Math.floor(pz / 16);
   const rout2 = rout * rout;
   const rin2 = rin >= 0 ? rin * rin : -1;
+  const band = Math.max(0, rin) + (input.conservativeChunks ?? 0);
+  const band2 = input.conservativeChunks ? band * band : -1;
   const tiles: Tile[] = [];
   if (rout < 0 || rin >= rout) return tiles;
 
@@ -109,7 +118,9 @@ export function* planTiles(input: PlanInput): Generator<void, Tile[], void> {
       const hi = Math.min(16, cellSizeFor(dist * HYSTERESIS, res, quality));
       if (p >= lo && p <= hi) cell = p;
     }
-    tiles.push({ key, x0, z0, size, cell, dist });
+    const t: Tile = { key, x0, z0, size, cell, dist };
+    if (near2 <= band2) t.conservative = true;
+    tiles.push(t);
   };
 
   const minX = Math.floor(((pcx - rout) * 16) / ROOT_SIZE);
