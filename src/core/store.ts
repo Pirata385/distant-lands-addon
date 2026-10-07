@@ -70,6 +70,8 @@ export class LodStore {
   private readonly staleChunks = new Set<string>();
   private persisted: Set<string> | undefined;
   private versionCounter = 0;
+  /** Most recently used region, checked before the LRU (scans touch the same region many times in a row). */
+  private lastRegion: Region | undefined;
   private corrupt = 0;
   /** Incremented whenever any chunk content changes. */
   dataEpoch = 0;
@@ -127,6 +129,11 @@ export class LodStore {
     this.staleChunks.add(chunkKey(dim, cx, cz));
   }
 
+  /** True when a block change was reported in the chunk since it was last sampled. */
+  isDirty(dim: number, cx: number, cz: number): boolean {
+    return this.staleChunks.has(chunkKey(dim, cx, cz));
+  }
+
   /** True when the chunk has no data, was edited, has another resolution, unknown age, or is older than maxAge ticks. */
   isStale(dim: number, cx: number, cz: number, now: number, maxAge: number): boolean {
     if (this.staleChunks.has(chunkKey(dim, cx, cz))) return true;
@@ -177,6 +184,7 @@ export class LodStore {
       this.kv.set(key, undefined);
       this.persistedKeys().delete(key);
       this.regions.delete(key);
+      if (this.lastRegion?.key === key) this.lastRegion = undefined;
       removed++;
     }
     if (removed) this.dataEpoch++;
@@ -188,6 +196,7 @@ export class LodStore {
     for (const key of [...this.persistedKeys()]) this.kv.set(key, undefined);
     this.persistedKeys().clear();
     this.regions.clear();
+    this.lastRegion = undefined;
     this.staleChunks.clear();
     this.dataEpoch++;
   }
@@ -217,9 +226,14 @@ export class LodStore {
   }
 
   private region(dim: number, rx: number, rz: number): Region {
+    const last = this.lastRegion;
+    if (last && last.dim === dim && last.rx === rx && last.rz === rz) return last;
     const key = regionKey(dim, rx, rz);
     let r = this.regions.get(key);
-    if (r) return r;
+    if (r) {
+      this.lastRegion = r;
+      return r;
+    }
     r = { key, dim, rx, rz, chunks: new Array(SIZE * SIZE).fill(undefined), dirty: false };
     const raw = this.persistedKeys().has(key) ? this.kv.get(key) : undefined;
     if (raw !== undefined) {
@@ -238,6 +252,7 @@ export class LodStore {
       }
     }
     this.regions.set(key, r);
+    this.lastRegion = r;
     return r;
   }
 
@@ -259,6 +274,7 @@ export class LodStore {
   }
 
   private onRegionEvicted(r: Region): void {
+    if (this.lastRegion === r) this.lastRegion = undefined;
     if (r.dirty && this.opts.persist) this.write(r);
   }
 }
