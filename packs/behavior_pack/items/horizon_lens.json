@@ -1,0 +1,22 @@
+{
+  "format_version": "1.21.60",
+  "minecraft:item": {
+    "description": {
+      "identifier": "dl:horizon_lens",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": {
+        "textures": {
+          "default": "dl_horizon_lens"
+        }
+      },
+      "minecraft:display_name": {
+        "value": "item.dl:horizon_lens.name"
+      },
+      "minecraft:max_stack_size": 1
+    }
+  }
+}

@@ -1,0 +1,153 @@
+{
+  "format_version": "1.10.0",
+  "particle_effect": {
+    "description": {
+      "identifier": "dl:lod_top",
+      "basic_render_parameters": {
+        "material": "particles_alpha",
+        "texture": "textures/particle/dl_lod"
+      }
+    },
+    "components": {
+      "minecraft:emitter_rate_instant": {
+        "num_particles": 1
+      },
+      "minecraft:emitter_lifetime_once": {
+        "active_time": 0.05
+      },
+      "minecraft:emitter_shape_point": {
+        "offset": [
+          "v.ox",
+          "v.oy",
+          "v.oz"
+        ]
+      },
+      "minecraft:particle_lifetime_expression": {
+        "max_lifetime": "v.life"
+      },
+      "minecraft:particle_initial_speed": 0,
+      "minecraft:particle_initialization": {
+        "per_render_expression": "v.k = v.grow > 0 ? math.clamp(v.particle_age / v.grow, 0, 1) : 1; v.k = v.k * v.k * (3 - 2 * v.k); v.lit = math.clamp(v.l0 + v.dl * v.particle_age, 0.05, 1);"
+      },
+      "minecraft:particle_appearance_billboard": {
+        "size": [
+          "v.sa * v.k",
+          "v.sb * v.k"
+        ],
+        "facing_camera_mode": "emitter_transform_xz",
+        "uv": {
+          "texture_width": 16,
+          "texture_height": 16,
+          "uv": [
+            0,
+            0
+          ],
+          "uv_size": [
+            16,
+            16
+          ]
+        }
+      },
+      "minecraft:particle_appearance_tinting": {
+        "color": [
+          "v.cr * v.lit",
+          "v.cg * v.lit",
+          "v.cb * v.lit",
+          1
+        ]
+      },
+      "minecraft:particle_expire_if_in_blocks": [
+        "minecraft:acacia_leaves",
+        "minecraft:andesite",
+        "minecraft:azalea",
+        "minecraft:azalea_leaves",
+        "minecraft:azalea_leaves_flowered",
+        "minecraft:bamboo",
+        "minecraft:bedrock",
+        "minecraft:birch_leaves",
+        "minecraft:black_terracotta",
+        "minecraft:blue_ice",
+        "minecraft:blue_terracotta",
+        "minecraft:brain_coral_block",
+        "minecraft:brown_mushroom_block",
+        "minecraft:brown_terracotta",
+        "minecraft:bubble_coral_block",
+        "minecraft:cactus",
+        "minecraft:calcite",
+        "minecraft:cherry_leaves",
+        "minecraft:clay",
+        "minecraft:coarse_dirt",
+        "minecraft:cobblestone",
+        "minecraft:cyan_terracotta",
+        "minecraft:dark_oak_leaves",
+        "minecraft:deepslate",
+        "minecraft:diorite",
+        "minecraft:dirt",
+        "minecraft:dirt_with_roots",
+        "minecraft:dripstone_block",
+        "minecraft:end_stone",
+        "minecraft:farmland",
+        "minecraft:fire_coral_block",
+        "minecraft:flowering_azalea",
+        "minecraft:flowing_lava",
+        "minecraft:flowing_water",
+        "minecraft:granite",
+        "minecraft:grass_block",
+        "minecraft:grass_path",
+        "minecraft:gravel",
+        "minecraft:gray_terracotta",
+        "minecraft:green_terracotta",
+        "minecraft:hardened_clay",
+        "minecraft:horn_coral_block",
+        "minecraft:ice",
+        "minecraft:jungle_leaves",
+        "minecraft:lava",
+        "minecraft:light_blue_terracotta",
+        "minecraft:light_gray_terracotta",
+        "minecraft:lime_terracotta",
+        "minecraft:magenta_terracotta",
+        "minecraft:magma",
+        "minecraft:mangrove_leaves",
+        "minecraft:mangrove_roots",
+        "minecraft:melon_block",
+        "minecraft:moss_block",
+        "minecraft:moss_carpet",
+        "minecraft:mossy_cobblestone",
+        "minecraft:mud",
+        "minecraft:muddy_mangrove_roots",
+        "minecraft:mushroom_stem",
+        "minecraft:mycelium",
+        "minecraft:netherrack",
+        "minecraft:oak_leaves",
+        "minecraft:obsidian",
+        "minecraft:orange_terracotta",
+        "minecraft:packed_ice",
+        "minecraft:packed_mud",
+        "minecraft:pale_moss_block",
+        "minecraft:pale_moss_carpet",
+        "minecraft:pale_oak_leaves",
+        "minecraft:pink_terracotta",
+        "minecraft:podzol",
+        "minecraft:pointed_dripstone",
+        "minecraft:powder_snow",
+        "minecraft:pumpkin",
+        "minecraft:purple_terracotta",
+        "minecraft:red_mushroom_block",
+        "minecraft:red_sand",
+        "minecraft:red_sandstone",
+        "minecraft:red_terracotta",
+        "minecraft:sand",
+        "minecraft:sandstone",
+        "minecraft:snow",
+        "minecraft:snow_layer",
+        "minecraft:spruce_leaves",
+        "minecraft:stone",
+        "minecraft:tube_coral_block",
+        "minecraft:tuff",
+        "minecraft:water",
+        "minecraft:white_terracotta",
+        "minecraft:yellow_terracotta"
+      ]
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "resource_pack_name": "distant_lands",
+  "texture_name": "atlas.items",
+  "texture_data": {
+    "dl_horizon_lens": {
+      "textures": "textures/items/dl_horizon_lens"
+    }
+  }
+}
