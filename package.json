@@ -1,0 +1,36 @@
+{
+  "name": "distant-lands-addon",
+  "version": "1.0.0",
+  "description": "Distant Horizons-style level-of-detail terrain for Minecraft Bedrock 26.3+",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "pack": "node scripts/build.mjs --pack",
+    "test": "node --import tsx --test --test-reporter=dot \"test/**/*.test.ts\"",
+    "test:verbose": "node --import tsx --test \"test/**/*.test.ts\"",
+    "test:perf": "node --import tsx --test \"test/perf/*.perf.ts\"",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "validate": "node scripts/validate-packs.mjs",
+    "preview": "node --import tsx scripts/preview.ts",
+    "check": "npm run typecheck && npm test && npm run test:perf && npm run validate",
+    "assets": "node --import tsx scripts/gen-assets.ts && python3 -I scripts/gen-images.py .",
+    "palette": "python3 -I scripts/gen-palette.py"
+  },
+  "devDependencies": {
+    "@minecraft/common": "1.2.0",
+    "@minecraft/server": "2.5.0",
+    "@minecraft/server-ui": "2.0.0",
+    "@minecraft/vanilla-data": "1.26.2",
+    "@types/node": "22.20.5",
+    "esbuild": "0.28.2",
+    "fflate": "0.8.3",
+    "quickjs-emscripten": "0.32.0",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

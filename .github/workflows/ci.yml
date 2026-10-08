@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Performance in QuickJS (runs alone)
+        run: npm run test:perf
+      - name: Validate the packed add-on (and that dist/ is up to date)
+        run: npm run validate
+      - run: npm run pack
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DistantLands-mcaddon
+          path: dist/*.mcaddon
+          if-no-files-found: error
