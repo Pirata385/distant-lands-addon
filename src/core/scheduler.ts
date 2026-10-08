@@ -15,6 +15,10 @@ export class Scheduler {
   private pos = 0;
   /** Steps executed per job name (diagnostics). */
   readonly steps = new Map<string, number>();
+  /** Longest single step per job name in ms (diagnostics; spikes show up here). */
+  readonly maxStepMs = new Map<string, number>();
+  /** Optional diagnostics hook called after every step. */
+  onStep: ((name: string, ms: number) => void) | undefined;
 
   constructor(private readonly clock: () => number) {}
 
@@ -43,10 +47,14 @@ export class Scheduler {
       const name = this.names[j];
       this.steps.set(name, (this.steps.get(name) ?? 0) + 1);
       let done = true;
+      const t0 = this.clock();
       try {
         done = g.next().done === true;
       } finally {
         if (done) this.current[j] = undefined;
+        const ms = this.clock() - t0;
+        if (ms > (this.maxStepMs.get(name) ?? 0)) this.maxStepMs.set(name, ms);
+        this.onStep?.(name, ms);
       }
       return true;
     }

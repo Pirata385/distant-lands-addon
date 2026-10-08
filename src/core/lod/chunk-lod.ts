@@ -6,7 +6,13 @@ export { F_FOLIAGE, F_SNOW, F_VOID, F_WATER, NO_DATA };
 /** Valid base sample resolutions (blocks per sample). */
 export const RESOLUTIONS = [2, 4, 8] as const;
 
-/** One detail level of a chunk: n×n cells of `size` blocks. Index = i + j * n (i along X, j along Z). */
+/** Bytes one cell occupies across the four level arrays. */
+const CELL_BYTES = 4 + 2 + 1 + 1;
+
+/**
+ * One detail level of a chunk: n×n cells of `size` blocks. Index = i + j * n (i along X, j along Z).
+ * The arrays are views into one buffer shared by all levels of the chunk (fewer heap objects for the GC to walk).
+ */
 export class LodLevel {
   readonly height: Int16Array;
   readonly color: Uint32Array;
@@ -16,12 +22,15 @@ export class LodLevel {
   constructor(
     readonly size: number,
     readonly n: number,
+    buffer: ArrayBuffer = new ArrayBuffer(n * n * CELL_BYTES),
+    offset = 0,
   ) {
     const len = n * n;
-    this.height = new Int16Array(len).fill(NO_DATA);
-    this.color = new Uint32Array(len);
-    this.flags = new Uint8Array(len);
-    this.depth = new Uint8Array(len);
+    // Widest type first keeps every view aligned (each level spans a multiple of 8 bytes).
+    this.color = new Uint32Array(buffer, offset, len);
+    this.height = new Int16Array(buffer, offset + len * 4, len).fill(NO_DATA);
+    this.flags = new Uint8Array(buffer, offset + len * 6, len);
+    this.depth = new Uint8Array(buffer, offset + len * 7, len);
   }
 }
 
@@ -129,7 +138,15 @@ export class ChunkLod {
 
   constructor(readonly res: number) {
     if (!(RESOLUTIONS as readonly number[]).includes(res)) throw new RangeError(`bad LOD resolution ${res}`);
-    for (let size = res; size <= 16; size *= 2) this.levels.push(new LodLevel(size, 16 / size));
+    let bytes = 0;
+    for (let size = res; size <= 16; size *= 2) bytes += (16 / size) ** 2 * CELL_BYTES;
+    const buffer = new ArrayBuffer(bytes);
+    let offset = 0;
+    for (let size = res; size <= 16; size *= 2) {
+      const n = 16 / size;
+      this.levels.push(new LodLevel(size, n, buffer, offset));
+      offset += n * n * CELL_BYTES;
+    }
   }
 
   get base(): LodLevel {

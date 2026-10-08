@@ -126,10 +126,14 @@ export function meshTile(tile: Tile, lookup: CellLookup, style: StyleParams): Fl
       has[i + j * n] = 1;
 
       if (f & F_WATER) continue;
+      // Lowest neighbour surface (8-neighbourhood, lowest samples); no per-cell allocations.
       let hMin = h;
-      for (const nk of [k - 1, k + 1, k - w, k + w, k - w - 1, k - w + 1, k + w - 1, k + w + 1]) {
-        const nh = lows[nk];
-        if (nh !== NO_DATA && nh < hMin) hMin = nh;
+      for (let dj = -w; dj <= w; dj += w) {
+        for (let di = -1; di <= 1; di++) {
+          if (dj === 0 && di === 0) continue;
+          const nh = lows[k + dj + di];
+          if (nh !== NO_DATA && nh < hMin) hMin = nh;
+        }
       }
       if (hMin <= h - 1) {
         // One block deeper than the lowest neighbour so rays grazing the step never slip underneath.

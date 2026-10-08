@@ -10,12 +10,19 @@ function clock(step = 0.1) {
   return () => (t += step);
 }
 
-function endless(counter: { n: number }) {
+/** Simulated time that only advances while jobs do work (clock reads are free). */
+function workClock() {
+  const c = { now: 0, read: () => c.now };
+  return c;
+}
+
+function endless(counter: { n: number }, onStep?: () => void) {
   return {
     next: () =>
       (function* () {
         for (;;) {
           counter.n++;
+          onStep?.();
           yield;
         }
       })(),
@@ -23,12 +30,13 @@ function endless(counter: { n: number }) {
 }
 
 test('runFor stops at the time budget', () => {
-  const c = clock(0.1);
-  const s = new Scheduler(c);
+  const c = workClock();
+  const s = new Scheduler(c.read);
   const a = { n: 0 };
-  s.add('a', endless(a));
+  s.add('a', endless(a, () => (c.now += 0.1)));
   s.runFor(3);
-  assert.ok(a.n >= 25 && a.n <= 31, `steps ${a.n}`);
+  assert.ok(a.n >= 29 && a.n <= 31, `steps ${a.n}`);
+  assert.ok((s.maxStepMs.get('a') ?? 0) > 0.09, 'step time is profiled');
 });
 
 test('weighted round robin gives every busy job a share', () => {
@@ -63,13 +71,14 @@ test('idle jobs are skipped and the scheduler reports idleness', () => {
 });
 
 test('slice yields between steps', () => {
-  const s = new Scheduler(clock(0.5));
+  const c = workClock();
+  const s = new Scheduler(c.read);
   const a = { n: 0 };
-  s.add('a', endless(a));
+  s.add('a', endless(a, () => (c.now += 0.5)));
   const g = s.slice(2);
   let yields = 0;
   while (!g.next().done) yields++;
-  assert.ok(yields >= 2 && yields <= 4, `yields ${yields}`);
+  assert.ok(yields >= 3 && yields <= 5, `yields ${yields}`);
 });
 
 test('fog ids map distance, mode and dimension', () => {

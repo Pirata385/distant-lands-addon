@@ -102,6 +102,27 @@ interface RefreshEntry {
   expires: number;
 }
 
+/** Score bucket width (blocks) for priority ordering. */
+const SCORE_BUCKET = 16;
+
+/** Orders tiles by score with a bucket sort (stable within a bucket; no comparator calls). */
+function byScore(list: TileState[]): TileState[] {
+  if (list.length < 2) return list;
+  let max = 0;
+  for (const s of list) if (s.score > max) max = s.score;
+  const n = Math.min(4096, Math.floor(max / SCORE_BUCKET) + 1);
+  const buckets: (TileState[] | undefined)[] = new Array(n);
+  for (const s of list) {
+    const b = Math.min(n - 1, Math.floor(s.score / SCORE_BUCKET));
+    const bucket = buckets[b];
+    if (bucket) bucket.push(s);
+    else buckets[b] = [s];
+  }
+  const out: TileState[] = [];
+  for (const bucket of buckets) if (bucket) for (const s of bucket) out.push(s);
+  return out;
+}
+
 function score(t: Tile, p: ViewParams): number {
   const cx = t.x0 + t.size / 2 - p.eye.x;
   const cz = t.z0 + t.size / 2 - p.eye.z;
@@ -136,17 +157,43 @@ export class PlayerView {
   spawnedTotal = 0;
   lastRefreshInterval = 0;
 
+  private building: Map<string, TileState> | null = null;
+  private buildParams: ViewParams | null = null;
+
   /** Replaces the wanted tile set. `sigOf` gives each tile's content signature (cell size + data versions). */
   setPlan(tiles: readonly Tile[], sigOf: (t: Tile) => string, p: ViewParams): void {
-    const next = new Map<string, TileState>();
-    for (const t of tiles) {
-      let s = this.states.get(t.key);
-      if (!s) s = new TileState(t);
-      else s.tile = t;
-      s.wantedSig = sigOf(t);
-      s.score = score(t, p);
-      next.set(t.key, s);
-    }
+    this.beginPlan(p);
+    for (const t of tiles) this.addPlanTile(t, sigOf(t));
+    this.commitPlan();
+  }
+
+  /** Starts building a new plan; the current plan keeps rendering until commitPlan(). */
+  beginPlan(p: ViewParams): void {
+    this.building = new Map();
+    this.buildParams = p;
+  }
+
+  addPlanTile(t: Tile, sig: string): void {
+    if (!this.building || !this.buildParams) throw new Error('beginPlan() first');
+    let s = this.states.get(t.key) ?? this.building.get(t.key);
+    if (!s) s = new TileState(t);
+    else s.tile = t;
+    s.wantedSig = sig;
+    s.score = score(t, this.buildParams);
+    this.building.set(t.key, s);
+  }
+
+  abortPlan(): void {
+    this.building = null;
+    this.buildParams = null;
+  }
+
+  /** Swaps in the plan built since beginPlan(). Linear time (no comparator sort: cheap in QuickJS). */
+  commitPlan(): void {
+    const next = this.building;
+    if (!next) return;
+    this.building = null;
+    this.buildParams = null;
     for (const [k, s] of this.states) {
       if (next.has(k)) continue;
       s.removed = true;
@@ -154,17 +201,16 @@ export class PlayerView {
       if (this.current === s) this.current = null;
     }
     this.states = next;
-    this.meshQueue = [];
-    for (const s of next.values()) if (s.sig !== s.wantedSig) this.meshQueue.push(s);
-    this.meshQueue.sort((a, b) => a.score - b.score);
+    const mesh: TileState[] = [];
+    for (const s of next.values()) if (s.sig !== s.wantedSig) mesh.push(s);
+    this.meshQueue = byScore(mesh);
     this.meshPos = 0;
     const pending: TileState[] = [];
     for (let i = this.spawnPos; i < this.spawnQueue.length; i++) {
       const s = this.spawnQueue[i];
       if (!s.removed && s.pendingSpawn) pending.push(s);
     }
-    pending.sort((a, b) => a.score - b.score);
-    this.spawnQueue = pending;
+    this.spawnQueue = byScore(pending);
     this.spawnPos = 0;
   }
 
@@ -355,6 +401,7 @@ export class PlayerView {
 
   /** Forget everything (dimension change, disable). Already spawned particles expire on their own. */
   reset(): void {
+    this.abortPlan();
     for (const s of this.states.values()) s.removed = true;
     this.states = new Map();
     this.meshQueue = [];

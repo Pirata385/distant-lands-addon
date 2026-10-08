@@ -33,10 +33,12 @@ const UPDATE_INTERVAL = 5;
 const ADAPT_INTERVAL = 100;
 const HUD_INTERVAL = 10;
 const ACQUIRE_INTERVAL = 20;
-const FLUSH_INTERVAL = 40;
+const FLUSH_INTERVAL = 10;
 const EVICT_INTERVAL = 1200;
 const SYNC_INTERVAL = 20;
 const MESH_CACHE_TILES = 8000;
+/** The mesh cache keeps this many meshes beyond the tiles currently planned for all players (for re-use). */
+const MESH_CACHE_SLACK = 512;
 /** Server considered lagging when the average tick interval exceeds this (ms). */
 const LAG_TICK_MS = 65;
 /** Pregeneration requests expire after 10 minutes. */
@@ -206,13 +208,13 @@ export class App {
 
     let i = 0;
     for (const s of [...this.states.values()]) {
-      if ((this.tickNo + i++) % UPDATE_INTERVAL === 0) this.safe(() => this.updatePlayer(s));
+      if ((this.tickNo + i++) % UPDATE_INTERVAL === 0) this.safe(() => this.updatePlayer(s), 'update');
     }
-    this.safe(() => this.spawnAll());
-    if (this.tickNo % ACQUIRE_INTERVAL === 0) this.safe(() => this.acquire());
-    if (this.tickNo % FLUSH_INTERVAL === 0) this.safe(() => this.store.flush(4));
-    if (this.tickNo % EVICT_INTERVAL === 0) this.safe(() => this.evict());
-    if (this.tickNo % HUD_INTERVAL === 0) this.safe(() => this.hud());
+    this.safe(() => this.spawnAll(), 'spawn');
+    if (this.tickNo % ACQUIRE_INTERVAL === 0) this.safe(() => this.acquire(), 'acquire');
+    if (this.tickNo % FLUSH_INTERVAL === 0) this.safe(() => this.store.flush(1), 'flush');
+    if (this.tickNo % EVICT_INTERVAL === 0) this.safe(() => this.evict(), 'evict');
+    if (this.tickNo % HUD_INTERVAL === 0) this.safe(() => this.hud(), 'hud');
     this.lastTickCost = this.host.clock() - t0;
   }
 
@@ -464,19 +466,19 @@ export class App {
 
   /** Content signature of a tile: cell size, display style and versions of its chunks and edge neighbours. */
   private signature(dim: number, t: Tile): string {
+    const store = this.store;
     let h = (t.cell * 7919 + this.styleEpoch) | 0;
     const c0x = Math.floor(t.x0 / 16);
     const c0z = Math.floor(t.z0 / 16);
     const span = t.size / 16;
-    const v = (cx: number, cz: number) => {
-      h = (Math.imul(h, 31) + this.store.version(dim, cx, cz)) | 0;
-    };
-    for (let cz = c0z; cz < c0z + span; cz++) for (let cx = c0x; cx < c0x + span; cx++) v(cx, cz);
+    for (let cz = c0z; cz < c0z + span; cz++) {
+      for (let cx = c0x; cx < c0x + span; cx++) h = (Math.imul(h, 31) + store.version(dim, cx, cz)) | 0;
+    }
     for (let k = 0; k < span; k++) {
-      v(c0x + k, c0z - 1);
-      v(c0x + k, c0z + span);
-      v(c0x - 1, c0z + k);
-      v(c0x + span, c0z + k);
+      h = (Math.imul(h, 31) + store.version(dim, c0x + k, c0z - 1)) | 0;
+      h = (Math.imul(h, 31) + store.version(dim, c0x + k, c0z + span)) | 0;
+      h = (Math.imul(h, 31) + store.version(dim, c0x - 1, c0z + k)) | 0;
+      h = (Math.imul(h, 31) + store.version(dim, c0x + span, c0z + k)) | 0;
     }
     return `${t.cell}${t.conservative ? 'c' : ''}:${h}`;
   }
@@ -509,15 +511,24 @@ export class App {
         conservativeChunks: CONSERVATIVE_BAND,
       });
       if (this.states.get(s.id) !== s || s.dimIndex !== dimIndex || !s.enabled) return false;
-      const sigs = new Map<string, string>();
+      // Build the new plan incrementally (the old one keeps rendering), then swap it in.
+      const prev = new Map<string, number>();
+      s.view.beginPlan(this.viewParams(s, 1));
       let k = 0;
       for (const t of tiles) {
-        sigs.set(t.key, this.signature(dimIndex, t));
-        if ((++k & 63) === 0) yield;
+        s.view.addPlanTile(t, this.signature(dimIndex, t));
+        prev.set(t.key, t.cell);
+        if ((++k & 63) === 0) {
+          yield;
+          if (this.states.get(s.id) !== s || s.dimIndex !== dimIndex || !s.enabled) {
+            s.view.abortPlan();
+            return false;
+          }
+        }
       }
-      if (this.states.get(s.id) !== s || s.dimIndex !== dimIndex || !s.enabled) return false;
-      s.view.setPlan(tiles, (t) => sigs.get(t.key)!, this.viewParams(s, 1));
-      s.prevCells = new Map(tiles.map((t) => [t.key, t.cell]));
+      s.view.commitPlan();
+      this.sizeMeshCache();
+      s.prevCells = prev;
       s.planTick = this.tickNo;
       s.planX = px;
       s.planZ = pz;
@@ -537,6 +548,13 @@ export class App {
       this.lookups.set(dim, l);
     }
     return l;
+  }
+
+  /** Sizes the shared mesh cache to the planned tiles plus some slack: unused meshes are heap the GC has to walk. */
+  private sizeMeshCache(): void {
+    let live = 0;
+    for (const st of this.states.values()) live += st.view.states.size;
+    this.meshCache.setCapacity(Math.min(MESH_CACHE_TILES, Math.ceil(live * 1.25) + MESH_CACHE_SLACK));
   }
 
   private nextMesh(): Generator<void, boolean, void> | undefined {
@@ -765,12 +783,18 @@ export class App {
 
   // ------------------------------------------------------------------------------------------- errors
 
-  private safe(fn: () => void): void {
+  /** Longest time (ms) spent per tick section and background job — shown in diagnostics. */
+  readonly profile = new Map<string, number>();
+
+  private safe(fn: () => void, section = 'tick'): void {
+    const t0 = this.host.clock();
     try {
       fn();
     } catch (e) {
-      this.error('tick', e);
+      this.error(section, e);
     }
+    const ms = this.host.clock() - t0;
+    if (ms > (this.profile.get(section) ?? 0)) this.profile.set(section, ms);
   }
 
   private error(where: string, e: unknown): void {

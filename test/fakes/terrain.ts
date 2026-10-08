@@ -123,6 +123,8 @@ export class FakeDimension implements HostDimension {
   commands: string[] = [];
   /** null = every chunk loaded. */
   loaded: Set<string> | null = null;
+  /** Columns kept in the memo before it is cleared (perf runs keep it small so it does not dominate the heap). */
+  cacheLimit = 200000;
   private cache = new Map<string, Column>();
 
   constructor(
@@ -137,7 +139,7 @@ export class FakeDimension implements HostDimension {
     if (c === undefined) {
       c = this.columnFn(x, z);
       if (c) {
-        if (this.cache.size > 200000) this.cache.clear();
+        if (this.cache.size > this.cacheLimit) this.cache.clear();
         this.cache.set(key, c);
       }
     }

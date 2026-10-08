@@ -23,20 +23,33 @@ const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 const B64_INDEX = new Int16Array(128).fill(-1);
 for (let i = 0; i < B64.length; i++) B64_INDEX[B64.charCodeAt(i)] = i;
 
+const B64_CODES = new Uint8Array(64);
+for (let i = 0; i < B64.length; i++) B64_CODES[i] = B64.charCodeAt(i);
+const PAD = 61; // '='
+
 function toBase64(bytes: Uint8Array): string {
-  let out = '';
+  // Character codes first, then strings in large pieces: per-character concatenation is slow in QuickJS.
+  const codes = new Uint8Array(Math.ceil(bytes.length / 3) * 4);
+  let o = 0;
   let i = 0;
   for (; i + 2 < bytes.length; i += 3) {
     const v = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
-    out += B64[(v >> 18) & 63] + B64[(v >> 12) & 63] + B64[(v >> 6) & 63] + B64[v & 63];
+    codes[o++] = B64_CODES[(v >> 18) & 63];
+    codes[o++] = B64_CODES[(v >> 12) & 63];
+    codes[o++] = B64_CODES[(v >> 6) & 63];
+    codes[o++] = B64_CODES[v & 63];
   }
   const rest = bytes.length - i;
-  if (rest === 1) {
-    const v = bytes[i] << 16;
-    out += B64[(v >> 18) & 63] + B64[(v >> 12) & 63] + '==';
-  } else if (rest === 2) {
-    const v = (bytes[i] << 16) | (bytes[i + 1] << 8);
-    out += B64[(v >> 18) & 63] + B64[(v >> 12) & 63] + B64[(v >> 6) & 63] + '=';
+  if (rest > 0) {
+    const v = (bytes[i] << 16) | (rest === 2 ? bytes[i + 1] << 8 : 0);
+    codes[o++] = B64_CODES[(v >> 18) & 63];
+    codes[o++] = B64_CODES[(v >> 12) & 63];
+    codes[o++] = rest === 2 ? B64_CODES[(v >> 6) & 63] : PAD;
+    codes[o++] = PAD;
+  }
+  let out = '';
+  for (let k = 0; k < codes.length; k += 4096) {
+    out += String.fromCharCode.apply(null, codes.subarray(k, k + 4096) as unknown as number[]);
   }
   return out;
 }

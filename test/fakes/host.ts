@@ -30,6 +30,10 @@ export interface SpawnRecord {
 
 export class FakePlayer implements HostPlayer {
   spawned: SpawnRecord[] = [];
+  /** Particles spawned so far (also counted when `record` is off). */
+  spawnCount = 0;
+  /** Keep a record of every particle (off for perf runs, where the records would dominate the heap). */
+  record = true;
   commands: string[] = [];
   bar: string[] = [];
   told: string[] = [];
@@ -72,7 +76,8 @@ export class FakePlayer implements HostPlayer {
   spawnParticle(effect: string, at: Vec3, vars: Readonly<Record<keyof typeof MOLANG, number>>) {
     if (this.failSpawns) throw new Error('LocationInUnloadedChunkError');
     if (!this.dim.isChunkLoaded(at.x, at.z)) throw new Error('LocationInUnloadedChunkError');
-    this.spawned.push({ tick: this.host.tick, effect, at: { ...at }, vars: { ...vars } });
+    this.spawnCount++;
+    if (this.record) this.spawned.push({ tick: this.host.tick, effect, at: { ...at }, vars: { ...vars } });
   }
   runCommand(cmd: string) {
     this.commands.push(cmd);

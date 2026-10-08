@@ -240,3 +240,35 @@ test('walls of conservative tiles stay centred (they must sit under the real sur
   const wall = sink.spawned.find((s) => s.kind === K_WALL)!;
   assert.equal(wall.emitter.x + wall.vars.ox, 328);
 });
+
+test('plans can be built incrementally while the old plan keeps rendering', () => {
+  const view = new PlayerView();
+  const sink = new RecordingSink();
+  const p = params();
+  const a = tileAt(320, 0);
+  const b = tileAt(-320, 0);
+  setup(view, [a], p);
+  run(view, sink, p, 1, 10);
+  view.beginPlan(p);
+  view.addPlanTile(b, 'sig16');
+  // Still rendering the old plan until commit.
+  assert.deepEqual([...view.states.keys()], [a.key]);
+  view.commitPlan();
+  assert.deepEqual([...view.states.keys()], [b.key]);
+  assert.equal(view.nextToMesh()!.tile.key, b.key);
+  view.beginPlan(p);
+  view.addPlanTile(a, 'sig16');
+  view.abortPlan();
+  assert.deepEqual([...view.states.keys()], [b.key], 'aborted plans change nothing');
+});
+
+test('mesh queue is ordered nearest-first without a comparator sort', () => {
+  const view = new PlayerView();
+  const p = params({ dir: { x: 1, y: 0, z: 0 } });
+  const tiles = [tileAt(480, 0), tileAt(160, 0), tileAt(-160, 0), tileAt(320, 0)];
+  view.setPlan(tiles, () => 'sig', p);
+  const order: number[] = [];
+  for (let s = view.nextToMesh(); s; s = view.nextToMesh()) order.push(s.tile.x0);
+  // Behind the player counts 2.5x: 152 blocks behind (score ~380) beats 488 blocks ahead.
+  assert.deepEqual(order, [160, 320, -160, 480]);
+});

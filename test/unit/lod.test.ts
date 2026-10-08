@@ -110,6 +110,20 @@ test('region codec round-trips heights, flags and colours within quantisation', 
   }
 });
 
+test('region payload is canonical base64 in every padding case', () => {
+  // res 8 chunks are 16 bytes: 1, 2 and 3 chunks cover '==', '=' and no padding.
+  for (const count of [1, 2, 3]) {
+    const chunks = Array.from({ length: 64 }, (_, i) => (i < count ? randomChunk(8, i + 100) : undefined));
+    const s = encodeRegion(chunks, 8);
+    const payload = s.split('|')[3];
+    const bytes = Buffer.from(payload, 'base64');
+    assert.equal(bytes.length, count * 16);
+    assert.equal(bytes.toString('base64'), payload);
+    const back = decodeRegion(s);
+    for (let i = 0; i < count; i++) assert.ok(sameContent(chunks[i]!, back.chunks[i]!));
+  }
+});
+
 test('corrupt region strings throw CodecError', () => {
   assert.throws(() => decodeRegion('garbage'), CodecError);
   assert.throws(() => decodeRegion('L1|4|0000000000000001|'), CodecError);
