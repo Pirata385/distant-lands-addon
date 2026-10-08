@@ -1,6 +1,6 @@
 /** Runs the production behavior-pack bundle against the fake Bedrock runtime. */
 import { register } from 'node:module';
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -18,6 +18,7 @@ export type FakePlayer = InstanceType<typeof mc.Player>;
 export type FakeOptions = import('../fakes/mc-server.ts').FakeOptions;
 
 let bundleUrl: string | undefined;
+let bundleDir: string | undefined;
 let runs = 0;
 
 async function bundle(): Promise<string> {
@@ -26,6 +27,7 @@ async function bundle(): Promise<string> {
     const base = join(import.meta.dirname, '..', '..', 'test-output');
     mkdirSync(base, { recursive: true });
     const out = mkdtempSync(join(base, 'sim-'));
+    bundleDir = out;
     const r = await build({ outDir: out });
     bundleUrl = pathToFileURL(join(r.bpDir, 'scripts', 'main.js')).href;
   }
@@ -41,8 +43,12 @@ export async function startWorld(opts: FakeOptions = {}): Promise<void> {
   fake.boot();
 }
 
+/** Restores the real clock and removes this process's build of the bundle. */
 export function finish(): void {
   mc.restoreClock();
+  if (bundleDir) rmSync(bundleDir, { recursive: true, force: true });
+  bundleDir = undefined;
+  bundleUrl = undefined;
 }
 
 /** Advances `n` ticks, letting promise-based UI flows progress between ticks. */

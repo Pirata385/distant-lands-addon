@@ -87,7 +87,7 @@ All core modules depend on small interfaces (`HostWorld`, `HostDimension`, `Host
   - `color` (Uint32 0xRRGGBB): colour after biome tint (texture-average palette × tint).
   - `flags` (Uint8): `WATER`, `FOLIAGE`, `SNOW`, `LAVA`, `VOID`.
   - `depth` (Uint8): water depth in blocks (0–63), when water-depth shading is on.
-- Mip levels: cell sizes `r, 2r, … 16` computed on insert (`ChunkLod.mips[level]`).
+- Mip levels: cell sizes `r, 2r, … 16` computed on insert (`ChunkLod.levels`). All levels of a chunk are views into one `ArrayBuffer` (fewer heap objects for the QuickJS GC to walk).
 - `version` (incremented when content changes), `sampledAt` (world tick), `res`.
 
 **Aggregation of 2×2 cells → 1** (used for mips and multi-chunk cells):
@@ -122,6 +122,8 @@ Per player, recomputed when the player moved ≥ 8 blocks, every 2 s, or when da
 - Detail function: `cell(d) = clamp(r · 2^⌊log2(d / (r·Q))⌋, r, 64)` where `Q` is the quality factor (Low 8, Medium 12, High 16, Ultra 22, or custom).
 - Quadtree over 64-block roots: a node is emitted as a tile when it is entirely outside the exclusion disk and `cell(nearest distance) ≥ node size` (one cell), otherwise it subdivides down to chunk tiles, whose cell size is `cell(center distance)` (≤ 16).
 - **Hysteresis**: a tile keeps its previous cell size unless the distance crossed the threshold by > 12 %, preventing LOD flicker while walking.
+- **Conservative band** *(added during testing)*: tiles within 2 chunks outside `Rin` use the lowest sample of each cell instead of the aggregated height, so LOD faces next to real terrain never float above it while real chunks stream in.
+- Plans are built incrementally (`beginPlan` / `addPlanTile` / `commitPlan`, yielding every 64 tiles); the previous plan keeps rendering until the new one is committed.
 - **Adaptive quality**: if the estimated quad count exceeds the player's quad budget, `Q` is reduced in steps until it fits.
 - Underground pause: if the player's head has sky light 0 and they are ≥ 16 blocks below the local LOD surface, refreshes stop (LOD invisible anyway); resumes when back on the surface.
 
@@ -129,7 +131,7 @@ Per player, recomputed when the player moved ≥ 8 blocks, every 2 s, or when da
 
 Tile `(x0, z0, N, s)` → packed `Float32Array` of quads (`kind, x, y, z, a, b, r, g, b, fade`):
 - **Top** quad per cell at `y = H − δ` (`δ = 0.15`, keeps the particle centre inside the real top block so it self-culls when the chunk loads), half-size `s/2`, axis-aligned horizontal (`emitter_transform_xz`).
-- **Wall** billboard (`lookat_y`) where `H − Hmin_neighbour ≥ 1`, centred in the cell from `Hmin` to `H`; fills vertical gaps from every horizontal view direction with one quad instead of up to four.
+- **Wall** billboard (`lookat_y`) where `H − Hmin_neighbour ≥ 1`, from `Hmin − 1` to `H`, where `Hmin` is the lowest *lowest sample* of the 8 neighbours; fills vertical gaps from every horizontal view direction with one quad instead of up to four. *(Refined during testing:)* at spawn time the wall is moved from the cell centre to the cell edge nearest the player, which closes the see-through gaps a centred wall leaves behind terrain steps (measured by the rasteriser: ≤ 38 % sky behind steps → ≤ 0.6 %). Conservative tiles keep centred walls (edge walls poked through real terrain there).
 - **Greedy quadtree merge**: four equal (height, flags, colour within ΔE tolerance) tops merge into one quad of twice the size, recursively (oceans and plains collapse to a few quads). Squares only, so quad orientation can never be transposed.
 - **Shading**: walls × 0.78; relief shading on tops from the height gradient (north-west light, like vanilla maps), style transforms (Natural / Vivid / Cartographic contours / Monochrome elevation / Debug LOD levels), aerial perspective (blend toward sky colour with distance), water depth darkening.
 - Mesh results are cached in an LRU keyed by `(tile, s, data versions, style version)` and shared by all players.
@@ -139,6 +141,7 @@ Tile `(x0, z0, N, s)` → packed `Float32Array` of quads (`kind, x, y, z, a, b, 
 - Per player: `Map<tileKey, TileState{quads, sig, spawnedAt, expiresAt, prio}>`.
 - Spawn queue order: (1) tiles whose particles expire within the safety margin, (2) new/changed tiles by priority (distance × view-angle factor, front first), (3) scheduled refreshes.
 - Every spawned particle gets `life = refreshInterval + margin` (default 15 s + 5 s); tiles refresh every `refreshInterval`, so copies overlap briefly and never blink. Under load the effective refresh interval stretches automatically (lifetimes follow).
+- **Speed-aware lifetimes** *(added during testing)*: a tile's lifetime is capped at the time until its nearest point enters the real-terrain radius at the player's current velocity, plus 1 s (minimum 3 s), so faces ahead of a sprinting or flying player expire as real terrain takes over.
 - Emitter position: on the eye→tile ray at `min(20, ½·distance)` blocks, clamped to world height (always inside loaded chunks, and inside the view frustum whenever the target is).
 - Per-tick global spawn budget shared round-robin between players; per-player quad caps.
 - New tiles "grow in" over 0.35 s (size eased from 0 → 1) for polished appearance; refreshes don't animate.
@@ -206,11 +209,11 @@ Resource-pack subpacks (pack settings in the game UI): **Standard** (opaque quad
 
 ## 13. UI & commands
 
-- `/dl:horizon [menu|stats|toggle|pregen|clear|selftest|reset] [value]` (custom command, no cheats required; world-changing actions require operator permission). Fallback: `/scriptevent dl:<action> [value]`.
-- **Horizon Lens** item (crafted from compass + paper) opens the menu on use.
+- `/dl:horizon [menu|stats|toggle|hud|pregen|clear|selftest|preset|reset] [value]` (custom command, no cheats required; world-changing actions require operator permission). Fallback: `/scriptevent dl:<action> [value]`; `/scriptevent dl:set <key>=<value>` sets any world setting.
+- **Horizon Lens** item (shapeless: compass + glass pane) opens the menu on use.
 - Menu (ActionForm): Quick presets · My view · World distance & quality · Generation · Updates & performance · Display · Cache & data · Diagnostics. Each page is a ModalForm generated from the settings schema (sliders, dropdowns, toggles, tooltips).
 - HUD (optional per player, action bar): quads, tiles, spawn rate, cache, generation queue, ms/tick, radius.
-- Self-test: spawns a calibration pattern 48 blocks ahead and reports detected capabilities.
+- Self-test: spawns a 4×4 calibration pattern 32 blocks ahead and reports detected capabilities.
 
 ## 14. Error handling
 
@@ -224,7 +227,8 @@ Resource-pack subpacks (pack settings in the game UI): **Standard** (opaque quad
 1. Unit tests (node:test + tsx): codec round-trip, aggregation rules, palette/tint math, planner tiling (coverage, no overlap, exclusion, hysteresis), mesher (quad counts, merge correctness, walls), renderer scheduling (no expiry gaps, budget adherence, priorities), settings validation, radius detection.
 2. End-to-end simulation: the bundled `main.js` runs against a fake `@minecraft/server` (procedural terrain with biomes/water/trees, chunk loading around players, ticking areas via command parsing, client particle store with lifetimes and `expire_if_in_blocks`, fog stack, dynamic properties with size limits, virtual clock, `runJob`/`runInterval` semantics). Scenarios: single player walking/flying, teleports, dimension changes, multiplayer, settings changes, world reload (persistence).
 3. Software rasterizer renders what the fake client would show (LOD particles + vanilla chunks) from the player's eye and compares coverage/depth against a ground-truth heightfield render; tests assert no holes in the LOD ring and bounded depth error. Preview PNGs are kept as artefacts.
-4. Static validation: all JSON parses; manifests, UUIDs, particle/fog/item schemas sanity-checked; every referenced texture/lang key exists; TypeScript type-checks against the official 2.5.0 / 2.0.0 typings.
+4. Static validation: all JSON parses; manifests, UUIDs, particle/fog/item schemas sanity-checked; every referenced texture/lang key exists; TypeScript type-checks against the official 2.5.0 / 2.0.0 typings. `npm run validate` repeats the archive-level checks on a freshly packed `.mcaddon` (and checks the committed one is identical).
+5. QuickJS *(added during testing)*: the shipped bundle must load as an ES module in QuickJS, and a 1 200-tick run of the real core interpreted by QuickJS must keep the per-tick averages within budget and 99.9 % of scheduler steps under 5 ms (limits scaled by a calibration workload on slower machines).
 
 ## 16. Risks
 

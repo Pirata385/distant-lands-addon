@@ -13,6 +13,27 @@ class RealClockHost extends FakeHost {
 
 declare const globalThis: { __result?: string; __ticks?: number };
 
+/** Fixed interpreter workload (typed-array loop + small objects); its time scales the limits to the machine speed. */
+function calibrate(): number {
+  let best = Infinity;
+  let sink = 0;
+  for (let r = 0; r < 5; r++) {
+    const t0 = Date.now();
+    const a = new Int32Array(4096);
+    for (let k = 0; k < 120; k++) {
+      for (let i = 0; i < a.length; i++) {
+        a[i] = (a[i] + i * k) | 0;
+        sink ^= a[i];
+      }
+      const o = { k, sink };
+      sink = (sink + o.k) | 0;
+    }
+    best = Math.min(best, Date.now() - t0);
+  }
+  return sink === 0.5 ? -1 : best;
+}
+const calibrationMs = calibrate();
+
 const host = new RealClockHost();
 host.viewRadius = 8;
 const p = host.addPlayer('perf', { x: 8, y: 100, z: 8 });
@@ -50,6 +71,7 @@ const over = (ms: number) => stepMs.filter((v) => v > ms).length;
 const st = app.stats('perf');
 globalThis.__result = JSON.stringify({
   ticks,
+  calibrationMs,
   tickAvg: avg(tickMs),
   tickMax: max(tickMs),
   bgAvg: avg(bgMs),
@@ -58,7 +80,8 @@ globalThis.__result = JSON.stringify({
   stepP99: pct(0.99),
   stepP999: pct(0.999),
   stepsOver10: over(10),
-  stepsOver20: over(20),
+  /** The 200 longest steps (ms, ascending), so the test can apply machine-scaled thresholds. */
+  topSteps: sorted.slice(-200),
   longestStep: max(stepMs),
   totalAvg: avg(tickMs.map((v, i) => v + bgMs[i])),
   quads: st?.quads,
