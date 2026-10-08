@@ -60,8 +60,9 @@ test('a height step creates walls on the high side with the right height', () =>
   assert.equal(walls.length, 4);
   for (const w of walls) {
     assert.equal(w.x, 6);
-    assert.equal(w.b, 5, 'half height = (70-60)/2');
-    assert.ok(Math.abs(w.y - (65 - TOP_OFFSET)) < 1e-5);
+    assert.equal(w.b, 5.5, 'half height covers 70 down to one block below 60');
+    assert.ok(Math.abs(w.y + w.b - (70 - TOP_OFFSET)) < 1e-5, 'wall top meets the top face');
+    assert.ok(Math.abs(w.y - w.b - (59 - TOP_OFFSET)) < 1e-5, 'wall bottom one block below the low neighbour');
     assert.equal(w.a, 2);
   }
   assert.ok(walls[0].g < tops[0].g, 'walls are darker than tops');
@@ -83,7 +84,7 @@ test('walls appear at tile borders from neighbour data', () => {
   const q = quads(meshTile(tile(0, 0, 16, 16), look, STYLE));
   const walls = q.filter((v) => v.kind === K_WALL);
   assert.equal(walls.length, 1);
-  assert.equal(walls[0].b, 8);
+  assert.equal(walls[0].b, 8.5);
 });
 
 test('colours stay within 0..1 and styles apply', () => {

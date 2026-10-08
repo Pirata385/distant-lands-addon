@@ -1,4 +1,4 @@
-import { QUAD_STRIDE } from './mesher';
+import { K_WALL, QUAD_STRIDE } from './mesher';
 import type { Tile } from './planner';
 import type { Vec3 } from './types';
 import { MinHeap } from './util/heap';
@@ -216,9 +216,22 @@ export class PlayerView {
       const e = this.emitter;
       while (this.cursor < total && spawned < budget) {
         const o = this.cursor * QUAD_STRIDE;
-        const wx = s.tile.x0 + q[o + 1];
+        let wx = s.tile.x0 + q[o + 1];
         const wy = q[o + 2];
-        const wz = s.tile.z0 + q[o + 3];
+        let wz = s.tile.z0 + q[o + 3];
+        if (q[o] === K_WALL && !s.tile.conservative) {
+          // Camera-facing walls stand at the cell edge nearest this player (half a block inside the cell, so the
+          // particle still sits in the column's blocks): a wall in the middle of the cell lets downward rays slip
+          // under it right behind the step.
+          const dx = p.eye.x - wx;
+          const dz = p.eye.z - wz;
+          const m = Math.max(Math.abs(dx), Math.abs(dz));
+          if (m > 0) {
+            const k = Math.max(0, q[o + 4] - 0.5) / m;
+            wx += dx * k;
+            wz += dz * k;
+          }
+        }
         v.ox = wx - e.x;
         v.oy = wy - e.y;
         v.oz = wz - e.z;

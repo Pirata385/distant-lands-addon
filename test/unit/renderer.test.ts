@@ -173,7 +173,7 @@ test('removed tiles are not refreshed and changed tiles grow in again', () => {
   assert.equal(view.nextToMesh(), undefined);
   run(view, sink, p, 40, 10, 1);
   assert.ok(sink.spawned.length > 0);
-  assert.ok(sink.spawned.every((x) => Math.round(x.emitter.x + x.vars.ox) === 328), 'only tile a');
+  assert.ok(sink.spawned.every((x) => Math.floor((x.emitter.x + x.vars.ox) / 16) * 16 === 320), 'only tile a');
   assert.ok(sink.spawned[0].vars.grow > 0, 'changed tile grows in');
   assert.ok(sink.spawned.slice(2).every((x) => x.vars.grow === 0), 'refreshes do not animate');
 });
@@ -212,4 +212,31 @@ test('tiles the player is approaching get lifetimes that end when real terrain a
   // Front tile's nearest edge is at x=160: 64 blocks beyond the 96-block radius at 10 b/s -> ~6.4 s.
   assert.ok(front.vars.life < 8 && front.vars.life >= 3, `front life ${front.vars.life}`);
   assert.equal(back.vars.life, p.refresh + LIFE_MARGIN);
+});
+
+test('walls are moved to the cell edge facing the player (no gap behind the step)', () => {
+  const view = new PlayerView();
+  const sink = new RecordingSink();
+  const p = params({ eye: { x: 0, y: 150, z: 0 } });
+  const t = tileAt(320, 0); // wall quad at tile-local (8, 66, 8), half width 8 -> cell spans x 320..336
+  setup(view, [t], p);
+  run(view, sink, p, 1, 10);
+  const wall = sink.spawned.find((s) => s.kind === K_WALL)!;
+  const wx = wall.emitter.x + wall.vars.ox;
+  const wz = wall.emitter.z + wall.vars.oz;
+  assert.ok(Math.abs(wx - 320.5) < 0.6, `wall x ${wx} should sit at the near (west) edge`);
+  assert.ok(Math.abs(wz - 8) < 1, `wall z ${wz}`);
+  const top = sink.spawned.find((s) => s.kind === K_TOP)!;
+  assert.equal(top.emitter.x + top.vars.ox, 328, 'tops stay centred');
+});
+
+test('walls of conservative tiles stay centred (they must sit under the real surface)', () => {
+  const view = new PlayerView();
+  const sink = new RecordingSink();
+  const p = params({ eye: { x: 0, y: 150, z: 0 } });
+  const t = { ...tileAt(320, 0), conservative: true };
+  setup(view, [t], p);
+  run(view, sink, p, 1, 10);
+  const wall = sink.spawned.find((s) => s.kind === K_WALL)!;
+  assert.equal(wall.emitter.x + wall.vars.ox, 328);
 });

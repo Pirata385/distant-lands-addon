@@ -74,21 +74,24 @@ export function meshTile(tile: Tile, lookup: CellLookup, style: StyleParams): Fl
   const n = tile.size / s;
   const w = n + 2;
   const hs = new Int32Array(w * w).fill(NO_DATA);
+  /** Lowest sample per cell: walls reach down to it so they meet conservative (lowered) neighbours too. */
+  const lows = new Int32Array(w * w).fill(NO_DATA);
   const cs = new Uint32Array(w * w);
   const fs = new Uint8Array(w * w);
   const ds = new Uint8Array(w * w);
   for (let j = -1; j <= n; j++) {
     for (let i = -1; i <= n; i++) {
-      const corner = (i < 0 || i >= n) && (j < 0 || j >= n);
-      if (corner) continue;
       if (lookup.cell(s, tile.x0 + i * s, tile.z0 + j * s, tmp)) {
         const k = i + 1 + (j + 1) * w;
         let h = tmp.h;
-        if (tile.conservative && !(tmp.f & F_WATER) && lookup.minHeight) {
+        let low = h;
+        if (!(tmp.f & F_WATER) && lookup.minHeight) {
           const m = lookup.minHeight(s, tile.x0 + i * s, tile.z0 + j * s);
-          if (m !== undefined && m < h) h = m;
+          if (m !== undefined && m < h) low = m;
         }
+        if (tile.conservative) h = low;
         hs[k] = h;
+        lows[k] = low;
         cs[k] = tmp.c;
         fs[k] = tmp.f;
         ds[k] = tmp.d;
@@ -124,18 +127,20 @@ export function meshTile(tile: Tile, lookup: CellLookup, style: StyleParams): Fl
 
       if (f & F_WATER) continue;
       let hMin = h;
-      for (const nk of [k - 1, k + 1, k - w, k + w]) {
-        const nh = hs[nk];
+      for (const nk of [k - 1, k + 1, k - w, k + w, k - w - 1, k - w + 1, k + w - 1, k + w + 1]) {
+        const nh = lows[nk];
         if (nh !== NO_DATA && nh < hMin) hMin = nh;
       }
       if (hMin <= h - 1) {
+        // One block deeper than the lowest neighbour so rays grazing the step never slip underneath.
+        const bottom = hMin - 1;
         push(
           K_WALL,
           i * s + s / 2,
-          (h + hMin) / 2 - TOP_OFFSET,
+          (h + bottom) / 2 - TOP_OFFSET,
           j * s + s / 2,
           s / 2,
-          (h - hMin) / 2,
+          (h - bottom) / 2,
           wallColor(color, f),
           level,
         );
