@@ -61,6 +61,32 @@ export function estimateQuads(tiles: readonly Tile[]): number {
 }
 
 /**
+ * Keeps the nearest tiles whose estimated faces fit `maxQuads` (used when adaptive quality is off, so the face
+ * budget still holds: the farthest terrain is left out instead of detail being lowered). Linear time.
+ */
+export function capTiles(tiles: Tile[], maxQuads: number): Tile[] {
+  if (estimateQuads(tiles) <= maxQuads) return tiles;
+  let far = 0;
+  for (const t of tiles) if (t.dist > far) far = t.dist;
+  // Faces per 16-block distance ring, accumulated nearest first; cut at the first ring that overflows.
+  const rings = new Float64Array(Math.floor(far / 16) + 1);
+  for (const t of tiles) {
+    const k = t.size / t.cell;
+    rings[Math.floor(t.dist / 16)] += k * k * 1.5;
+  }
+  let sum = 0;
+  let cut = rings.length;
+  for (let i = 0; i < rings.length; i++) {
+    sum += rings[i];
+    if (sum > maxQuads) {
+      cut = i;
+      break;
+    }
+  }
+  return tiles.filter((t) => Math.floor(t.dist / 16) < cut);
+}
+
+/**
  * Selects LOD tiles around a player with a quadtree over 64-block roots. Big nodes become single cells when the
  * distance rule allows a cell at least that large at their nearest point; nodes touching the excluded (real
  * terrain) disk or the outer edge are split down to chunk tiles. Yields once per root.

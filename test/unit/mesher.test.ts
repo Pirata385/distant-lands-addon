@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { meshTile, QUAD_STRIDE, K_TOP, K_WALL, TOP_OFFSET, StyleParams, CellData, CellLookup } from '../../src/core/mesher';
+import { meshTile, tileSignature, QUAD_STRIDE, K_TOP, K_WALL, TOP_OFFSET, StyleParams, CellData, CellLookup } from '../../src/core/mesher';
 import { StoreLookup } from '../../src/core/cells';
 import { LodStore, KV } from '../../src/core/store';
 import { ChunkLod, F_WATER, NO_DATA, aggregate } from '../../src/core/lod/chunk-lod';
@@ -168,4 +168,27 @@ test('conservative tiles use the lowest sample of each cell', () => {
   const safe = quads(meshTile({ ...t, conservative: true }, look, STYLE)).filter((v) => v.kind === K_TOP);
   assert.ok(Math.min(...safe.map((v) => v.y)) < Math.min(...normal.map((v) => v.y)));
   for (const v of safe) assert.ok(Math.abs(v.y - (66 - TOP_OFFSET)) < 1e-5 || Math.abs(v.y - (70 - TOP_OFFSET)) < 1e-5, `y=${v.y}`);
+});
+
+test('tile signatures cover every chunk the mesher reads, including corners and whole neighbour cells', () => {
+  const versions = new Map<string, number>();
+  const store = { version: (_d: number, cx: number, cz: number) => versions.get(`${cx},${cz}`) ?? 0 };
+  const sig = (t: Tile) => tileSignature(t, 0, store, 0);
+  const touch = (cx: number, cz: number) => versions.set(`${cx},${cz}`, (versions.get(`${cx},${cz}`) ?? 0) + 1);
+  const chunkTile: Tile = { key: '32,32,16', x0: 32, z0: 32, size: 16, cell: 4, dist: 100 };
+  const big: Tile = { key: '0,0,64', x0: 0, z0: 0, size: 64, cell: 64, dist: 400 };
+  for (const [t, cx, cz] of [
+    [chunkTile, 1, 1], // diagonal neighbour (walls read all 8 neighbours)
+    [chunkTile, 3, 2], // edge neighbour
+    [big, -4, 0], // far side of the 64-block neighbour cell
+    [big, 7, 7], // diagonal neighbour cell
+  ] as const) {
+    const before = sig(t);
+    touch(cx, cz);
+    assert.notEqual(sig(t), before, `${t.key}: chunk ${cx},${cz}`);
+  }
+  const before = sig(chunkTile);
+  touch(5, 5);
+  touch(0, 2);
+  assert.equal(sig(chunkTile), before, 'chunks the mesher does not read leave the signature alone');
 });

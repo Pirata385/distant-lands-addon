@@ -9,7 +9,8 @@ import type { BedrockHost } from './host';
 export interface UiContext {
   app: App;
   host: BedrockHost;
-  capabilities: () => Record<string, string | number | boolean>;
+  /** What the client of `player` supports (for the self-test report). */
+  capabilities: (player: Player) => Record<string, string | number | boolean>;
 }
 
 function tr(key: string, args?: Array<string | number>): RawMessage {
@@ -21,11 +22,19 @@ interface Shown {
   cancelationReason?: FormCancelationReason;
 }
 
-/** Shows a form, retrying while the player is busy (chat open right after typing the command). */
+/**
+ * Shows a form, retrying while the player is busy (chat open right after typing the command). Resolves to
+ * undefined when the form was closed or could not be shown (player left, server shutting down).
+ */
 async function present<T extends Shown>(player: Player, show: () => Promise<T>): Promise<T | undefined> {
   for (let attempt = 0; attempt < 60; attempt++) {
     if (!player.isValid) return undefined;
-    const r = await show();
+    let r: T;
+    try {
+      r = await show();
+    } catch {
+      return undefined; // FormRejectError: the player quit or the server is shutting down
+    }
     if (r.canceled && r.cancelationReason === FormCancelationReason.UserBusy) {
       await system.waitTicks(5);
       continue;
@@ -192,7 +201,7 @@ async function openDiagnostics(ctx: UiContext, player: Player): Promise<boolean>
     ctx.app.settings.setPlayer(player.id, 'pHud', !hud);
     return true;
   }
-  for (const line of ctx.app.selfTest(player.id, ctx.capabilities())) player.sendMessage(`§7[Distant Lands]§r ${line}`);
+  for (const line of ctx.app.selfTest(player.id, ctx.capabilities(player))) player.sendMessage(`§7[Distant Lands]§r ${line}`);
   player.sendMessage(tr('dl.msg.selftest'));
   return false;
 }

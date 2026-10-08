@@ -14,10 +14,7 @@ export interface SamplerOptions {
 }
 
 /** Underwater plants that can be the topmost block of a water column. */
-const WATER_PLANTS = new Set([
-  'minecraft:kelp', 'minecraft:kelp_plant', 'minecraft:seagrass', 'minecraft:tall_seagrass', 'minecraft:sea_pickle',
-  'minecraft:bubble_column',
-]);
+const WATER_PLANTS = new Set(['minecraft:kelp', 'minecraft:seagrass', 'minecraft:sea_pickle', 'minecraft:bubble_column']);
 
 const GROUND_SKIP_TYPES = [
   'minecraft:oak_leaves', 'minecraft:spruce_leaves', 'minecraft:birch_leaves', 'minecraft:jungle_leaves',

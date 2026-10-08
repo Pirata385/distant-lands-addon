@@ -173,14 +173,16 @@ export class PlayerView {
     this.buildParams = p;
   }
 
-  addPlanTile(t: Tile, sig: string): void {
-    if (!this.building || !this.buildParams) throw new Error('beginPlan() first');
+  /** Adds a tile to the plan being built. Returns false when no plan is being built (the view was reset). */
+  addPlanTile(t: Tile, sig: string): boolean {
+    if (!this.building || !this.buildParams) return false;
     let s = this.states.get(t.key) ?? this.building.get(t.key);
     if (!s) s = new TileState(t);
     else s.tile = t;
     s.wantedSig = sig;
     s.score = score(t, this.buildParams);
     this.building.set(t.key, s);
+    return true;
   }
 
   abortPlan(): void {
@@ -256,6 +258,9 @@ export class PlayerView {
     while (spawned < budget) {
       if (!this.current && !this.pick(now, p)) break;
       const s = this.current!;
+      // The emitter follows the player: one placed from an older eye position (a tile can take several ticks)
+      // may lie in a chunk that unloaded after a teleport, and every spawn from it would fail.
+      this.placeEmitter(s, p);
       const q = s.quads!;
       const total = q.length / QUAD_STRIDE;
       const v = this.vars;
@@ -358,7 +363,6 @@ export class PlayerView {
       this.currentRefresh = Math.max(1, this.currentLife - URGENT_WINDOW - 0.5);
     }
     this.currentGrow = fresh && p.transitions ? GROW_SECONDS : 0;
-    this.placeEmitter(s, p);
     return true;
   }
 

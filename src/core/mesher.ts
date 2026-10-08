@@ -69,6 +69,28 @@ const tmp: CellData = { h: 0, c: 0, f: 0, d: 0 };
  * Builds the quads for one tile: a horizontal top per cell (merged into larger squares where neighbouring cells are
  * identical) and a camera-facing wall wherever a cell is at least one block above its lowest neighbour.
  */
+/**
+ * Content signature of a tile: cell size, conservative flag, display style and the versions of every chunk
+ * {@link meshTile} reads — the tile's own chunks plus a border one neighbour cell wide (a cell may span several
+ * chunks), corners included, since walls look at all 8 neighbours.
+ */
+export function tileSignature(
+  t: Tile,
+  styleEpoch: number,
+  store: { version(dim: number, cx: number, cz: number): number },
+  dim: number,
+): string {
+  let h = (t.cell * 7919 + styleEpoch) | 0;
+  const border = Math.max(1, Math.ceil(t.cell / 16));
+  const c0x = Math.floor(t.x0 / 16) - border;
+  const c0z = Math.floor(t.z0 / 16) - border;
+  const span = t.size / 16 + 2 * border;
+  for (let cz = c0z; cz < c0z + span; cz++) {
+    for (let cx = c0x; cx < c0x + span; cx++) h = (Math.imul(h, 31) + store.version(dim, cx, cz)) | 0;
+  }
+  return `${t.cell}${t.conservative ? 'c' : ''}:${h}`;
+}
+
 export function meshTile(tile: Tile, lookup: CellLookup, style: StyleParams): Float32Array {
   const s = tile.cell;
   const n = tile.size / s;

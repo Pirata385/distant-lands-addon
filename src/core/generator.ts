@@ -39,6 +39,8 @@ interface Batch {
   bz0: number;
   size: number;
   startedAt: number;
+  /** Tick of the last load check (waiting batches are checked once per tick). */
+  checkedAt: number;
   loaded: boolean;
   done: boolean;
   cancelled: boolean;
@@ -76,6 +78,17 @@ export class LodGenerator {
   cancelAll(): void {
     for (const b of this.active) this.release(b);
     this.active.length = 0;
+    // Data may have been cleared: search from the inner edge again.
+    this.frontier.clear();
+  }
+
+  /** True when work() has something to do this tick: a loaded batch to sample, a batch to check or to release. */
+  ready(now: number): boolean {
+    for (const b of this.active) {
+      if (b.done || b.loaded) return true;
+      if (now > b.startedAt && b.checkedAt !== now) return true;
+    }
+    return false;
   }
 
   update(players: readonly PlayerFocus[], now: number, opts: GenOptions): void {
@@ -133,6 +146,9 @@ export class LodGenerator {
       }
       this.frontier.set(p.id, { cx: pcx, cz: pcz, ring: firstRing >= 0 ? firstRing : rout });
     }
+    if (this.frontier.size > players.length) {
+      for (const id of [...this.frontier.keys()]) if (!players.some((p) => p.id === id)) this.frontier.delete(id);
+    }
     return best;
   }
 
@@ -168,7 +184,7 @@ export class LodGenerator {
       }
       return false;
     }
-    this.active.push({ slot, dim, bx0, bz0, size, startedAt: now, loaded: false, done: false, cancelled: false });
+    this.active.push({ slot, dim, bx0, bz0, size, startedAt: now, checkedAt: -1, loaded: false, done: false, cancelled: false });
     return true;
   }
 
@@ -188,7 +204,8 @@ export class LodGenerator {
     for (const b of this.active) {
       if (b.done) continue;
       if (!b.loaded) {
-        if (now <= b.startedAt) continue;
+        if (now <= b.startedAt || b.checkedAt === now) continue;
+        b.checkedAt = now;
         let all = true;
         for (let cz = b.bz0; cz < b.bz0 + b.size && all; cz++) {
           for (let cx = b.bx0; cx < b.bx0 + b.size; cx++) {

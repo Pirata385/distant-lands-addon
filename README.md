@@ -35,6 +35,13 @@ Then add both packs to the world's `world_behavior_packs.json` and `world_resour
 
 Keep your video render distance where you like it: Distant Lands draws beyond it.
 
+**Uninstall:**
+1. Run `/dl:horizon clear` to delete the saved LOD data.
+2. Remove the packs.
+3. If the add-on was removed while it was generating terrain, delete its leftover ticking areas with
+   `/tickingarea remove dl_gen_0`, `dl_gen_1` and `dl_gen_2`. While the add-on is installed it removes them itself
+   at startup.
+
 ## Using it
 
 Join the world and look at the horizon. Areas you have explored appear within seconds. Unexplored terrain
@@ -99,7 +106,7 @@ limits. The keys below work with `dl:set`.
 | Track block changes | `trackBlockChanges` | on / off | on |
 | Script budget | `budgetMs` | 1–10 ms per tick | 3 |
 | Particle spawns per tick | `spawnsPerTick` | 10–250 (shared by all players) | 60 |
-| Max LOD faces per player | `maxQuads` | 1000–16000 | 4000 |
+| Max LOD faces per player | `maxQuads` | 1000–16000. Adaptive quality lowers detail to fit; without it, the farthest terrain is left out | 4000 |
 | Adaptive quality | `adaptive` | on / off | on |
 | Pause underground | `pauseUnderground` | on / off | on |
 
@@ -107,9 +114,9 @@ limits. The keys below work with `dl:set`.
 
 | Setting | Key | Values | Default |
 | --- | --- | --- | --- |
-| Memory cache | `memoryChunks` | 1024–32768 chunks | 8192 |
+| Memory cache | `memoryChunks` | 1024–32768 chunks, raised automatically to hold every player's LOD distance | 8192 |
 | Save LOD data in the world | `persist` | on / off | on |
-| Storage budget | `storageMB` | 1–32 MB | 8 |
+| Storage budget | `storageMB` | 1–32 MB. Far-away data goes first; data within players' LOD distance is kept, and operators are told if it does not fit | 8 |
 
 **Display**
 

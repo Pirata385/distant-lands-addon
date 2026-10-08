@@ -187,8 +187,11 @@ function buildExpireList(): string[] {
       out.add(`minecraft:${name}`);
     }
   }
-  // Snow layers and liquids are real terrain even where the palette has no texture for them.
-  for (const name of ['snow_layer', 'flowing_water', 'flowing_lava', 'water', 'lava']) out.add(`minecraft:${name}`);
+  // Snow layers, liquids and water plants (sampled as the water surface) are real terrain even where the palette
+  // has no texture for them.
+  for (const name of ['snow_layer', 'flowing_water', 'flowing_lava', 'water', 'lava', 'kelp', 'seagrass', 'sea_pickle', 'bubble_column']) {
+    out.add(`minecraft:${name}`);
+  }
   return [...out].sort();
 }
 

@@ -21,6 +21,8 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - name: Performance in QuickJS (runs alone)
+        run: npm run test:perf
       - name: Validate the packed add-on (and that dist/ is up to date)
         run: npm run validate
       - run: npm run pack

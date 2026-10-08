@@ -28,14 +28,13 @@ world.afterEvents.worldLoad.subscribe(() => boot());
 // Fallback for script reloads where worldLoad has already fired.
 system.runTimeout(() => boot(), 40);
 
-function capabilities(host: BedrockHost): Record<string, string | number | boolean> {
-  const p = world.getAllPlayers()[0];
-  const w = p ? host.wrapPlayer(p) : undefined;
+function capabilities(host: BedrockHost, p: Player): Record<string, string | number | boolean> {
+  const w = host.wrapPlayer(p);
   return {
     'script api': '@minecraft/server 2.5.0',
-    'graphics mode': w?.graphicsMode() ?? '?',
-    'device max render distance': w?.maxRenderDistance() ?? '?',
-    'memory tier': w?.memoryTier() ?? '?',
+    'graphics mode': w.graphicsMode() ?? '?',
+    'device max render distance': w.maxRenderDistance() ?? '?',
+    'memory tier': w.memoryTier() ?? '?',
   };
 }
 
@@ -51,7 +50,7 @@ function boot(): void {
     console.error(`[Distant Lands] failed to start: ${e instanceof Error ? e.stack : String(e)}`);
     return;
   }
-  ctx = { app, host, capabilities: () => capabilities(host) };
+  ctx = { app, host, capabilities: (p) => capabilities(host, p) };
   const c = ctx;
 
   world.afterEvents.playerSpawn.subscribe((ev) => {
@@ -82,8 +81,9 @@ function boot(): void {
   });
   system.afterEvents.scriptEventReceive.subscribe((ev) => {
     if (!ev.id.startsWith('dl:')) return;
-    const src = ev.sourceEntity;
-    handleAction(c, src instanceof Player ? src : undefined, ev.id, ev.message);
+    // A player running /scriptevent is the source; for NPC dialogue it is the initiator.
+    const src = ev.sourceEntity instanceof Player ? ev.sourceEntity : ev.initiator instanceof Player ? ev.initiator : undefined;
+    handleAction(c, src, ev.id, ev.message);
   });
   system.beforeEvents.shutdown.subscribe(() => {
     try {

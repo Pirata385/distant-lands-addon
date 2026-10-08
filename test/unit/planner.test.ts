@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { planTiles, cellSizeFor, PlanInput, Tile, estimateQuads, HYSTERESIS } from '../../src/core/planner';
+import { planTiles, cellSizeFor, capTiles, PlanInput, Tile, estimateQuads, HYSTERESIS } from '../../src/core/planner';
 
 function plan(input: PlanInput): Tile[] {
   const gen = planTiles(input);
@@ -140,4 +140,15 @@ test('chunk tiles just outside the real-terrain radius are marked conservative',
     if (inBand) marked++;
   }
   assert.ok(marked > 20);
+});
+
+test('with adaptive quality off the face budget keeps the nearest tiles', () => {
+  const tiles = plan({ px: 8, pz: 8, rinChunks: 6, routChunks: 32, res: 4, quality: 22, prev: new Map() });
+  const all = estimateQuads(tiles);
+  const capped = capTiles(tiles, all / 3);
+  assert.ok(capped.length < tiles.length && capped.length > 0);
+  assert.ok(estimateQuads(capped) <= all / 3, `${estimateQuads(capped)} > ${all / 3}`);
+  const kept = Math.max(...capped.map((t) => t.dist));
+  for (const t of tiles) if (!capped.includes(t)) assert.ok(t.dist >= kept - 16, 'only farther tiles are dropped');
+  assert.equal(capTiles(tiles, all + 1), tiles, 'within budget: unchanged');
 });

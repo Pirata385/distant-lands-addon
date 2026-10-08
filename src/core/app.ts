@@ -4,13 +4,14 @@ import { FogManager, fogIdFor } from './fog';
 import { LodGenerator } from './generator';
 import { formatHud } from './hud';
 import { lightParams } from './lighting';
-import { K_TOP, meshTile, StyleParams } from './mesher';
-import { planTiles, Tile } from './planner';
+import { K_TOP, meshTile, StyleParams, tileSignature } from './mesher';
+import { capTiles, planTiles } from './planner';
 import { detectRadius } from './radius';
 import { ParticleSink, PlayerView, ViewParams } from './renderer';
 import { SamplerOptions } from './sampler';
 import { MAX_LOD_CHUNKS, RES_OPTIONS, Settings, Effective } from './settings';
-import { LodStore } from './store';
+import { KeepArea, LodStore } from './store';
+import { REGION_CHUNKS } from './lod/codec';
 import { NO_DATA } from './flags';
 import { EFFECT_TOP, EFFECT_WALL, Host, HostDimension, HostPlayer, Vec3 } from './types';
 import { Scheduler } from './scheduler';
@@ -24,6 +25,8 @@ export const PLAYER_KEY = 'dl:player';
 const INNER_OVERLAP = 1;
 /** Chunks beyond the LOD inner edge drawn with conservative heights (stay under the real surface). */
 const CONSERVATIVE_BAND = 2;
+/** Data this many chunks beyond a player's LOD distance is kept too (it is needed again after small moves). */
+const KEEP_MARGIN_CHUNKS = 4;
 /** Faster than this (blocks/s) between updates is treated as a teleport, not movement. */
 const TELEPORT_SPEED = 120;
 const PLAN_MOVE_BLOCKS = 8;
@@ -118,6 +121,7 @@ export class App {
   private lastTickCost = 0;
   private errors = 0;
   private started = false;
+  private storageWarned = false;
 
   constructor(private readonly host: Host) {
     this.settings = new Settings({
@@ -178,7 +182,8 @@ export class App {
   }
 
   onBlockChanged(dimIndex: number, x: number, z: number): void {
-    if (this.settings.flag('trackBlockChanges')) this.store.markDirty(dimIndex, Math.floor(x / 16), Math.floor(z / 16));
+    if (!this.settings.flag('trackBlockChanges') || !this.lodDimension(dimIndex)) return;
+    this.store.markDirty(dimIndex, Math.floor(x / 16), Math.floor(z / 16), this.tickNo);
   }
 
   onWeather(dimIndex: number, kind: 'Clear' | 'Rain' | 'Thunder'): void {
@@ -240,7 +245,7 @@ export class App {
   private applySettings(): void {
     const s = this.settings;
     this.res = Number(RES_OPTIONS[s.num('sampleRes')]);
-    this.store.configure({ res: this.res, memoryChunks: s.num('memoryChunks'), persist: s.flag('persist') });
+    this.store.configure({ res: this.res, persist: s.flag('persist') });
     this.style = { style: s.num('style'), relief: s.num('relief') / 100, waterDepth: s.flag('waterDepth') };
     const styleKey = `${this.style.style}|${this.style.relief}|${this.style.waterDepth}`;
     if (styleKey !== this.styleKey) {
@@ -253,7 +258,11 @@ export class App {
     if (this.samplerKey && samplerKey !== this.samplerKey) this.store.invalidateBefore(this.tickNo);
     this.samplerKey = samplerKey;
     if (s.num('genMode') !== 2 || !s.flag('enabled')) this.generator.cancelAll();
-    for (const st of this.states.values()) st.needsPlan = true;
+    for (const st of this.states.values()) {
+      st.eff = s.effective(st.id);
+      st.needsPlan = true;
+    }
+    this.sizeStore();
     this.appliedVersion = s.version;
   }
 
@@ -464,25 +473,6 @@ export class App {
     this.spawnRR = (this.spawnRR + 1) % n;
   }
 
-  /** Content signature of a tile: cell size, display style and versions of its chunks and edge neighbours. */
-  private signature(dim: number, t: Tile): string {
-    const store = this.store;
-    let h = (t.cell * 7919 + this.styleEpoch) | 0;
-    const c0x = Math.floor(t.x0 / 16);
-    const c0z = Math.floor(t.z0 / 16);
-    const span = t.size / 16;
-    for (let cz = c0z; cz < c0z + span; cz++) {
-      for (let cx = c0x; cx < c0x + span; cx++) h = (Math.imul(h, 31) + store.version(dim, cx, cz)) | 0;
-    }
-    for (let k = 0; k < span; k++) {
-      h = (Math.imul(h, 31) + store.version(dim, c0x + k, c0z - 1)) | 0;
-      h = (Math.imul(h, 31) + store.version(dim, c0x + k, c0z + span)) | 0;
-      h = (Math.imul(h, 31) + store.version(dim, c0x - 1, c0z + k)) | 0;
-      h = (Math.imul(h, 31) + store.version(dim, c0x + span, c0z + k)) | 0;
-    }
-    return `${t.cell}${t.conservative ? 'c' : ''}:${h}`;
-  }
-
   private nextPlan(): Generator<void, boolean, void> | undefined {
     for (const s of this.states.values()) {
       if (s.needsPlan && !s.planning && s.enabled && s.loadedRadius > 0) return this.plan(s);
@@ -496,11 +486,13 @@ export class App {
     try {
       const dimIndex = s.dimIndex;
       const epoch = this.store.dataEpoch;
+      // Settings may have changed since the last player update: plan with the values of the version recorded below.
       const version = this.settings.version;
+      s.eff = this.settings.effective(s.id);
       const radius = s.loadedRadius;
       const px = s.pos.x;
       const pz = s.pos.z;
-      const tiles = yield* planTiles({
+      let tiles = yield* planTiles({
         px,
         pz,
         rinChunks: Math.max(0, radius - INNER_OVERLAP),
@@ -511,12 +503,15 @@ export class App {
         conservativeChunks: CONSERVATIVE_BAND,
       });
       if (this.states.get(s.id) !== s || s.dimIndex !== dimIndex || !s.enabled) return false;
+      // Adaptive quality lowers detail to fit the face budget; without it, the farthest tiles are left out instead.
+      if (!this.settings.flag('adaptive')) tiles = capTiles(tiles, s.eff.maxQuads);
       // Build the new plan incrementally (the old one keeps rendering), then swap it in.
       const prev = new Map<string, number>();
       s.view.beginPlan(this.viewParams(s, 1));
       let k = 0;
       for (const t of tiles) {
-        s.view.addPlanTile(t, this.signature(dimIndex, t));
+        // False when the view was reset meanwhile (LOD toggled, dimension changed): this plan is obsolete.
+        if (!s.view.addPlanTile(t, tileSignature(t, this.styleEpoch, this.store, dimIndex))) return false;
         prev.set(t.key, t.cell);
         if ((++k & 63) === 0) {
           yield;
@@ -528,6 +523,7 @@ export class App {
       }
       s.view.commitPlan();
       this.sizeMeshCache();
+      this.sizeStore();
       s.prevCells = prev;
       s.planTick = this.tickNo;
       s.planX = px;
@@ -548,6 +544,21 @@ export class App {
       this.lookups.set(dim, l);
     }
     return l;
+  }
+
+  /**
+   * The memory cache always holds the regions covering every player's LOD distance. A smaller cache would cycle
+   * regions through storage (or, without persistence, lose and regenerate them) on every plan.
+   */
+  private sizeStore(): void {
+    let regions = 0;
+    for (const st of this.states.values()) {
+      if (!st.enabled) continue;
+      const side = Math.ceil((2 * (st.eff.distance + KEEP_MARGIN_CHUNKS)) / REGION_CHUNKS) + 1;
+      regions += side * side;
+    }
+    const needed = regions * REGION_CHUNKS * REGION_CHUNKS;
+    this.store.configure({ memoryChunks: Math.max(this.settings.num('memoryChunks'), needed) });
   }
 
   /** Sizes the shared mesh cache to the planned tiles plus some slack: unused meshes are heap the GC has to walk. */
@@ -641,15 +652,26 @@ export class App {
   }
 
   private nextGeneration(): Generator<void, boolean, void> | undefined {
-    if (this.generator.activeCount === 0) return undefined;
+    // Idle while every batch waits for its ticking area to load (checked once per tick).
+    if (!this.generator.ready(this.tickNo)) return undefined;
     return this.generator.work(this.tickNo);
   }
 
   private evict(): void {
-    const points = [...this.states.values()]
-      .filter((s) => s.dim)
-      .map((s) => ({ dim: s.dimIndex, cx: Math.floor(s.pos.x / 16), cz: Math.floor(s.pos.z / 16) }));
-    this.store.evictStorage(points, this.settings.num('storageMB') * 1024 * 1024);
+    const keep: KeepArea[] = [];
+    for (const s of this.states.values()) {
+      if (!s.dim) continue;
+      const r = s.eff.distance + KEEP_MARGIN_CHUNKS;
+      keep.push({ dim: s.dimIndex, cx: Math.floor(s.pos.x / 16), cz: Math.floor(s.pos.z / 16), r });
+    }
+    for (const g of this.pregens) {
+      keep.push({ dim: g.dim.index, cx: Math.floor(g.x / 16), cz: Math.floor(g.z / 16), r: g.radius + KEEP_MARGIN_CHUNKS });
+    }
+    this.store.evictStorage(keep, this.settings.num('storageMB') * 1024 * 1024);
+    if (this.store.storageShort && !this.storageWarned) {
+      this.storageWarned = true;
+      this.notifyOperators('dl.msg.storage_small');
+    }
   }
 
   // ------------------------------------------------------------------------------------------- HUD & tools
@@ -738,7 +760,18 @@ export class App {
     const len = Math.hypot(dir.x, dir.z) || 1;
     const cx = eye.x + (dir.x / len) * 32;
     const cz = eye.z + (dir.z / len) * 32;
-    const base = Math.floor(eye.y) - 2;
+    // In the air, above eye level and above the terrain there: inside terrain blocks the particles would self-cull
+    // at once and the test would look like a failure.
+    let base = Math.floor(eye.y) + 3;
+    try {
+      const dim = p.dimension();
+      for (const [ox, oz] of [[0, 0], [-6, -6], [6, -6], [-6, 6], [6, 6]]) {
+        const top = dim.topmost(Math.floor(cx + ox), Math.floor(cz + oz));
+        if (top) base = Math.max(base, top.y + 4);
+      }
+    } catch {
+      // Unloaded or unavailable: keep the eye-relative height.
+    }
     const emitter = { x: eye.x + (dir.x / len) * 2, y: eye.y, z: eye.z + (dir.z / len) * 2 };
     let ok = 0;
     let failed = 0;

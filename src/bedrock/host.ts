@@ -166,7 +166,8 @@ export class BedrockPlayer implements HostPlayer {
 
   isOperator(): boolean {
     try {
-      return this.player.playerPermissionLevel >= PlayerPermissionLevel.Operator;
+      // Custom (3) is a restricted member with individually chosen abilities, not an operator.
+      return this.player.playerPermissionLevel === PlayerPermissionLevel.Operator;
     } catch {
       return false;
     }

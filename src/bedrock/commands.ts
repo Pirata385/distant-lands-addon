@@ -93,7 +93,7 @@ export function runAction(ctx: UiContext, player: Player | undefined, parsed: Pa
       reply(tr('dl.msg.cleared'));
       return;
     case 'selftest':
-      for (const line of app.selfTest(player!.id, ctx.capabilities())) reply(`§7[Distant Lands]§r ${line}`);
+      for (const line of app.selfTest(player!.id, ctx.capabilities(player!))) reply(`§7[Distant Lands]§r ${line}`);
       reply(tr('dl.msg.selftest'));
       return;
     case 'preset': {

@@ -56,7 +56,8 @@ export interface HostDimension {
 }
 
 export function dimensionIndex(id: string): number {
-  switch (id) {
+  // Some events report ids without the namespace.
+  switch (id.includes(':') ? id : `minecraft:${id}`) {
     case 'minecraft:overworld':
       return 0;
     case 'minecraft:nether':

@@ -1,4 +1,4 @@
-import { ChunkLod, sameContent } from './lod/chunk-lod';
+import { ChunkLod, contentVersion, sameContent } from './lod/chunk-lod';
 import { CodecError, REGION_CHUNKS, decodeRegion, encodeRegion } from './lod/codec';
 import { Lru } from './util/lru';
 
@@ -48,10 +48,22 @@ function localIndex(cx: number, cz: number): number {
   return (cx - regionOf(cx) * SIZE) + (cz - regionOf(cz) * SIZE) * SIZE;
 }
 
+/** Block-edit marks kept at most (oldest dropped first; those chunks are refreshed by the periodic resample). */
+const MAX_DIRTY_CHUNKS = 8192;
+
+/** A position whose surroundings must stay stored: regions within `r` chunks are never evicted from storage. */
+export interface KeepArea {
+  dim: number;
+  cx: number;
+  cz: number;
+  r: number;
+}
+
 export interface StoreStats {
   regionsInMemory: number;
   chunksInMemory: number;
   dirtyRegions: number;
+  dirtyChunks: number;
   persistedRegions: number;
   corruptRegions: number;
   bytes: number;
@@ -59,13 +71,15 @@ export interface StoreStats {
 
 /**
  * LOD data cache: an LRU of decoded 8×8-chunk regions in memory, backed by dynamic properties.
- * Chunk versions come from a single counter so they never repeat, even across evictions.
+ * Chunk versions are content hashes, so they are stable across evictions and reloads.
  */
 export class LodStore {
   private readonly regions: Lru<string, Region>;
-  private readonly staleChunks = new Set<string>();
+  /** Chunks with block edits not yet sampled: key → tick of the latest edit. */
+  private readonly staleChunks = new Map<string, number>();
   private persisted: Set<string> | undefined;
-  private versionCounter = 0;
+  /** True when the last storage eviction could not get under the budget without touching protected regions. */
+  storageShort = false;
   /** Most recently used region, checked before the LRU (scans touch the same region many times in a row). */
   private lastRegion: Region | undefined;
   private corrupt = 0;
@@ -104,27 +118,37 @@ export class LodStore {
     return this.get(dim, cx, cz)?.version ?? 0;
   }
 
-  /** Stores freshly sampled data. Returns true when the content changed. */
+  /**
+   * Stores data sampled starting at tick `now`. Returns true when the content changed. Data at another resolution
+   * than the current one (sampled just before a settings change) is ignored.
+   */
   put(dim: number, cx: number, cz: number, lod: ChunkLod, now: number): boolean {
+    if (lod.res !== this.opts.res) return false;
     const region = this.region(dim, regionOf(cx), regionOf(cz));
     const i = localIndex(cx, cz);
     const old = region.chunks[i];
-    this.staleChunks.delete(chunkKey(dim, cx, cz));
+    const key = chunkKey(dim, cx, cz);
+    const editedAt = this.staleChunks.get(key);
+    // An edit made after the sample started may not be in it: keep the chunk dirty.
+    if (editedAt !== undefined && editedAt < now) this.staleChunks.delete(key);
     if (old && sameContent(old, lod)) {
       old.sampledAt = now;
       return false;
     }
     lod.sampledAt = now;
-    lod.version = ++this.versionCounter;
+    lod.version = contentVersion(lod);
     region.chunks[i] = lod;
     region.dirty = true;
     this.dataEpoch++;
     return true;
   }
 
-  /** Flags a chunk for resampling (block changed). */
-  markDirty(dim: number, cx: number, cz: number): void {
-    this.staleChunks.add(chunkKey(dim, cx, cz));
+  /** Flags a chunk for resampling (a block changed at tick `tick`). */
+  markDirty(dim: number, cx: number, cz: number, tick = -Infinity): void {
+    const key = chunkKey(dim, cx, cz);
+    this.staleChunks.delete(key); // re-insert: Map order is the eviction order
+    this.staleChunks.set(key, tick);
+    if (this.staleChunks.size > MAX_DIRTY_CHUNKS) this.staleChunks.delete(this.staleChunks.keys().next().value as string);
   }
 
   /** True when a block change was reported in the chunk since it was last sampled. */
@@ -160,26 +184,34 @@ export class LodStore {
   }
 
   /**
-   * Deletes persisted regions, farthest from the given chunk positions first, until storage is within budget.
-   * Returns the number of regions removed.
+   * Deletes persisted regions, farthest from the given areas first, until storage is within budget. Regions within
+   * an area's radius are never deleted (they would only be generated again); when the budget cannot be met without
+   * them, `storageShort` is set. Returns the number of regions removed.
    */
-  evictStorage(points: ReadonlyArray<{ dim: number; cx: number; cz: number }>, budgetBytes: number): number {
+  evictStorage(areas: ReadonlyArray<KeepArea>, budgetBytes: number): number {
+    this.storageShort = false;
     if (this.kv.totalBytes() <= budgetBytes) return 0;
     const keys = [...this.persistedKeys()];
-    const scored = keys.map((key) => {
+    const scored: { key: string; d: number }[] = [];
+    for (const key of keys) {
       const p = parseRegionKey(key);
       let best = Infinity;
+      let keep = false;
       if (p) {
-        const cx = p.rx * SIZE + SIZE / 2;
-        const cz = p.rz * SIZE + SIZE / 2;
-        for (const pt of points) {
-          if (pt.dim !== p.dim) continue;
-          const d = Math.hypot(pt.cx - cx, pt.cz - cz);
+        const x0 = p.rx * SIZE;
+        const z0 = p.rz * SIZE;
+        for (const a of areas) {
+          if (a.dim !== p.dim) continue;
+          const d = Math.hypot(a.cx - (x0 + SIZE / 2), a.cz - (z0 + SIZE / 2));
           if (d < best) best = d;
+          // Distance from the area centre to the nearest chunk of the region.
+          const nx = Math.max(x0 - a.cx, 0, a.cx - (x0 + SIZE - 1));
+          const nz = Math.max(z0 - a.cz, 0, a.cz - (z0 + SIZE - 1));
+          if (Math.hypot(nx, nz) <= a.r) keep = true;
         }
       }
-      return { key, d: best };
-    });
+      if (!keep) scored.push({ key, d: best });
+    }
     scored.sort((a, b) => b.d - a.d);
     let removed = 0;
     for (const { key } of scored) {
@@ -191,6 +223,7 @@ export class LodStore {
       removed++;
     }
     if (removed) this.dataEpoch++;
+    this.storageShort = this.kv.totalBytes() > budgetBytes;
     return removed;
   }
 
@@ -215,6 +248,7 @@ export class LodStore {
       regionsInMemory: this.regions.size,
       chunksInMemory: chunks,
       dirtyRegions: dirty,
+      dirtyChunks: this.staleChunks.size,
       persistedRegions: this.persistedKeys().size,
       corruptRegions: this.corrupt,
       bytes: this.kv.totalBytes(),
@@ -244,7 +278,7 @@ export class LodStore {
         const decoded = decodeRegion(raw);
         for (let i = 0; i < decoded.chunks.length; i++) {
           const c = decoded.chunks[i];
-          if (c) c.version = ++this.versionCounter;
+          if (c) c.version = contentVersion(c);
           r.chunks[i] = c;
         }
       } catch (e) {

@@ -207,6 +207,27 @@ export function quantizeDepth(d: number): number {
   return Math.min(15, Math.round(d / 3));
 }
 
+/**
+ * Version of a chunk's content: a hash of exactly what the codec stores (heights, flags, RGB565 colour, depth bucket).
+ * Equal content gives equal versions, so a chunk reloaded from storage keeps the version it had before eviction and
+ * meshes built from it stay valid. Never 0 (0 means "no data").
+ */
+export function contentVersion(lod: ChunkLod): number {
+  const b = lod.base;
+  let h = Math.imul(0x811c9dc5 ^ lod.res, 0x5bd1e995);
+  for (let i = 0; i < b.height.length; i++) {
+    const height = b.height[i];
+    const f = b.flags[i];
+    h = Math.imul(h ^ (height === NO_DATA ? (f & F_VOID ? -1 : -2) : height), 0x5bd1e995);
+    h ^= h >>> 13;
+    if (height === NO_DATA) continue;
+    const depth = f & F_WATER ? quantizeDepth(b.depth[i]) : 0;
+    h = Math.imul(h ^ (quantizeColor(b.color[i]) | ((f & 7) << 16) | (depth << 19)), 0x5bd1e995);
+    h ^= h >>> 15;
+  }
+  return h === 0 ? 1 : h;
+}
+
 /** True when two chunks would encode to the same stored data (ignores sub-quantisation colour noise). */
 export function sameContent(a: ChunkLod, b: ChunkLod): boolean {
   if (a.res !== b.res) return false;

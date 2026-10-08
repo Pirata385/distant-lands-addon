@@ -38,12 +38,12 @@ export const SETTINGS: Record<string, [label: string, tip: string, options?: Rec
   trackBlockChanges: ['Track block changes', 'Re-sample chunks where blocks are broken, placed or exploded.'],
   budgetMs: ['Script budget (ms/tick)', 'Maximum script time per tick for background work.'],
   spawnsPerTick: ['Particle spawns per tick', 'Shared by all players. Higher fills the horizon faster.'],
-  maxQuads: ['Max LOD faces per player', 'Upper bound of distant-terrain faces. Adaptive quality keeps each player under it.'],
+  maxQuads: ['Max LOD faces per player', 'Upper bound of distant-terrain faces. Adaptive quality lowers detail to stay under it; without it, the farthest terrain is left out.'],
   adaptive: ['Adaptive quality', 'Automatically lowers detail when the face budget is exceeded and raises it again when there is room.'],
   pauseUnderground: ['Pause underground', 'Stop refreshing distant terrain while you are deep underground.'],
-  memoryChunks: ['Memory cache (chunks)', 'LOD chunks kept in memory.'],
+  memoryChunks: ['Memory cache (chunks)', 'LOD chunks kept in memory. Raised automatically when the players\' LOD distances need more.'],
   persist: ['Save LOD data in the world', 'Keeps collected distant terrain between sessions.'],
-  storageMB: ['Storage budget (MB)', 'Oldest far-away LOD data is removed beyond this size.'],
+  storageMB: ['Storage budget (MB)', 'Far-away LOD data is removed beyond this size. Data within the players\' LOD distance is always kept.'],
   style: [
     'Terrain style',
     'How distant terrain is coloured.',
@@ -130,6 +130,7 @@ export const UI: Record<string, string> = {
   'dl.msg.set': '[Distant Lands] %s = %s',
   'dl.msg.set_usage': '[Distant Lands] Usage: /scriptevent dl:set <setting>=<value>',
   'dl.msg.usage': '[Distant Lands] Actions: %s',
+  'dl.msg.storage_small': '[Distant Lands] The storage budget is too small for the current LOD distance. Nearby LOD data is kept anyway; raise the storage budget or lower the distance.',
   'dl.msg.ticking_limit': '[Distant Lands] The world has no free ticking area (limit 10). Distant terrain generation pauses for 5 minutes; explored terrain still updates.',
 };
 

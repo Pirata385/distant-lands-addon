@@ -199,6 +199,18 @@ test('using the Horizon Lens opens the menu and the self-test draws its grid', a
   healthy(p);
 });
 
+test('the self-test grid stays visible for a player standing on the ground', async () => {
+  await world({ viewRadius: 6 });
+  const p = fake.join('ground', { x: 8, y: 63, z: 8 }); // on the ground block at y=62
+  await ticks(20);
+  const t0 = fake.tick;
+  fake.runCustomCommand(p, 'selftest');
+  await ticks(2);
+  const grid = p.particles.filter((q) => q.born >= t0 && Math.hypot(q.x - 8, q.z - 8) < 48);
+  assert.equal(grid.length, 32, `${grid.length} of 32 test faces survived the self-cull`);
+  healthy(p);
+});
+
 test('LOD data survives a world reload and renders without regenerating', async () => {
   await world({ viewRadius: 6 });
   const p = fake.join('saver', { x: 8, y: 100, z: 8 });

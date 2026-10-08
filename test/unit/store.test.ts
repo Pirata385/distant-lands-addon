@@ -54,14 +54,47 @@ test('lru evicts the least recently used entry and get refreshes recency', () =>
 test('put/get round-trips and versions only change with content', () => {
   const store = new LodStore(new MemKV(), { res: 4, memoryChunks: 4096, persist: true });
   assert.equal(store.get(0, 3, -5), undefined);
+  assert.equal(store.version(0, 3, -5), 0, 'no data');
   assert.equal(store.put(0, 3, -5, chunk(4, 70), 100), true);
-  assert.equal(store.version(0, 3, -5), 1);
+  const v1 = store.version(0, 3, -5);
+  assert.notEqual(v1, 0);
   assert.equal(store.put(0, 3, -5, chunk(4, 70), 200), false, 'same content');
-  assert.equal(store.version(0, 3, -5), 1);
+  assert.equal(store.version(0, 3, -5), v1);
   assert.equal(store.get(0, 3, -5)!.sampledAt, 200, 'sample time refreshed');
   assert.equal(store.put(0, 3, -5, chunk(4, 71), 300), true);
-  assert.equal(store.version(0, 3, -5), 2);
+  assert.notEqual(store.version(0, 3, -5), v1);
   assert.ok(store.dataEpoch >= 2);
+});
+
+test('versions survive memory eviction and reload (no re-mesh storm when the cache cycles)', () => {
+  const store = new LodStore(new MemKV(), { res: 4, memoryChunks: 64, persist: true });
+  store.put(0, 1, 1, chunk(4, 70, rgb(91, 140, 61)), 1);
+  const v = store.version(0, 1, 1);
+  store.put(0, 40, 40, chunk(4, 66), 1); // other region: evicts and persists the first
+  assert.equal(store.stats().regionsInMemory, 1);
+  assert.equal(store.version(0, 1, 1), v, 'same content after reload, same version');
+});
+
+test('put ignores chunks sampled at another resolution', () => {
+  const store = new LodStore(new MemKV(), { res: 4, memoryChunks: 4096, persist: true });
+  assert.equal(store.put(0, 0, 0, chunk(8, 70), 1), false);
+  assert.equal(store.get(0, 0, 0), undefined);
+});
+
+test('a block edit made while the chunk was being sampled keeps it dirty', () => {
+  const store = new LodStore(new MemKV(), { res: 4, memoryChunks: 4096, persist: true });
+  store.markDirty(0, 1, 1, 50);
+  store.put(0, 1, 1, chunk(4, 70), 40); // sampling started before the edit
+  assert.ok(store.isDirty(0, 1, 1));
+  store.put(0, 1, 1, chunk(4, 71), 60);
+  assert.ok(!store.isDirty(0, 1, 1));
+});
+
+test('the dirty-chunk set is bounded', () => {
+  const store = new LodStore(new MemKV(), { res: 4, memoryChunks: 4096, persist: true });
+  for (let i = 0; i < 20000; i++) store.markDirty(0, i, -i, i);
+  assert.ok(store.stats().dirtyChunks <= 8192, `${store.stats().dirtyChunks}`);
+  assert.ok(store.isDirty(0, 19999, -19999), 'newest edits are kept');
 });
 
 test('regions load lazily from storage', () => {
@@ -119,11 +152,24 @@ test('storage eviction removes the regions farthest from players first', () => {
   store.put(0, 640, 0, chunk(4, 64), 1);
   store.flush(10);
   const before = kv.totalBytes();
-  const removed = store.evictStorage([{ dim: 0, cx: 0, cz: 0 }], before - 1);
+  const removed = store.evictStorage([{ dim: 0, cx: 0, cz: 0, r: 0 }], before - 1);
   assert.equal(removed, 1);
   assert.ok(!kv.data.has(regionKey(0, 80, 0)), 'farthest region removed');
   assert.ok(kv.data.has(regionKey(0, 0, 0)));
   assert.equal(store.get(0, 640, 0), undefined);
+  assert.equal(store.storageShort, false);
+});
+
+test('storage eviction never removes regions inside a player\'s LOD radius', () => {
+  const kv = new MemKV();
+  const store = new LodStore(kv, { res: 4, memoryChunks: 4096, persist: true });
+  for (const cx of [0, 20, 40, 640]) store.put(0, cx, 0, chunk(4, 64), 1);
+  store.flush(10);
+  const removed = store.evictStorage([{ dim: 0, cx: 0, cz: 0, r: 24 }], 1);
+  assert.equal(removed, 2, 'only the regions beyond the radius go');
+  assert.ok(kv.data.has(regionKey(0, 0, 0)) && kv.data.has(regionKey(0, 2, 0)), 'regions within 24 chunks kept');
+  assert.ok(!kv.data.has(regionKey(0, 5, 0)) && !kv.data.has(regionKey(0, 80, 0)));
+  assert.equal(store.storageShort, true, 'the budget cannot be met: reported, not forced');
 });
 
 test('staleness: missing, dirty, old, restored and other-resolution chunks', () => {

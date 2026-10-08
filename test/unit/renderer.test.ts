@@ -145,6 +145,38 @@ test('skips spawning when host throws unloaded and resumes without losing quads'
   assert.equal(view.pump(0.05, 10, sink, p), 2);
 });
 
+test('a teleport while a tile is half-spawned moves the emitter with the player (no stuck spawning)', () => {
+  // Spawning only works near the player (like spawnParticle in loaded chunks).
+  class NearSink extends RecordingSink {
+    centre: Vec3 = { x: 0, y: 72, z: 0 };
+    override spawn(kind: number, emitter: Vec3, vars: SpawnVars): void {
+      if (Math.hypot(emitter.x - this.centre.x, emitter.z - this.centre.z) > 48) throw new Error('LocationInUnloadedChunkError');
+      super.spawn(kind, emitter, vars);
+    }
+  }
+  const view = new PlayerView();
+  const sink = new NearSink();
+  const tile = tileAt(320, 0);
+  const quads = new Float32Array(QUAD_STRIDE * 12);
+  for (let i = 0; i < 12; i++) quads.set([K_TOP, 1 + i, 70, 8, 0.5, 0.5, 0.4, 0.6, 0.3, 3], i * QUAD_STRIDE);
+  let p = params();
+  view.setPlan([tile], () => 'sig', p);
+  view.setMesh(view.nextToMesh()!, quads, 'sig');
+  assert.equal(view.pump(0, 4, sink, p), 4);
+
+  // Teleport 600 blocks: the old emitter position is no longer loaded, the tile is still in the plan.
+  p = params({ eye: { x: 600, y: 72, z: 0 } });
+  sink.centre = { x: 600, y: 72, z: 0 };
+  let spawned = 0;
+  for (let tick = 1; tick <= 4; tick++) spawned += view.pump(tick / 20, 4, sink, p);
+  assert.equal(spawned, 8, 'the rest of the tile is spawned from an emitter near the new position');
+  for (const s of sink.spawned.slice(4)) {
+    assert.ok(Math.abs(s.emitter.x - 600) <= EMIT_DISTANCE + 1, `emitter at ${s.emitter.x}`);
+  }
+  const xs = sink.spawned.map((s) => Math.round(s.emitter.x + s.vars.ox)).sort((a, b) => a - b);
+  assert.deepEqual(xs, Array.from({ length: 12 }, (_, i) => 321 + i), 'every quad lands at its world position');
+});
+
 test('lifetimes stretch when the spawn budget cannot keep up', () => {
   const view = new PlayerView();
   const sink = new RecordingSink();
@@ -260,6 +292,12 @@ test('plans can be built incrementally while the old plan keeps rendering', () =
   view.addPlanTile(a, 'sig16');
   view.abortPlan();
   assert.deepEqual([...view.states.keys()], [b.key], 'aborted plans change nothing');
+  view.beginPlan(p);
+  assert.equal(view.addPlanTile(a, 'sig16'), true);
+  view.reset();
+  assert.equal(view.addPlanTile(b, 'sig16'), false, 'a reset view refuses tiles of the plan that was in progress');
+  view.commitPlan();
+  assert.equal(view.states.size, 0);
 });
 
 test('mesh queue is ordered nearest-first without a comparator sort', () => {

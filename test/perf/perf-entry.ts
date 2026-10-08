@@ -32,8 +32,6 @@ function calibrate(): number {
   }
   return sink === 0.5 ? -1 : best;
 }
-const calibrationMs = calibrate();
-
 const host = new RealClockHost();
 host.viewRadius = 8;
 const p = host.addPlayer('perf', { x: 8, y: 100, z: 8 });
@@ -69,6 +67,8 @@ const sorted = stepMs.slice().sort((a, b) => a - b);
 const pct = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))];
 const over = (ms: number) => stepMs.filter((v) => v > ms).length;
 const st = app.stats('perf');
+// Calibrated after the run: early on, the interpreter itself is still being compiled by the host (much slower).
+const calibrationMs = calibrate();
 globalThis.__result = JSON.stringify({
   ticks,
   calibrationMs,
