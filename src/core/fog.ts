@@ -2,24 +2,30 @@ import type { HostPlayer } from './types';
 
 /** User-provided id for our entry on the /fog command stack. */
 export const FOG_USER_ID = 'dl_lod';
-/** LOD distances (chunks) that have a fog definition in the resource pack. */
-export const FOG_DISTANCES = [6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32];
+/** LOD distances (chunks) that have a fog definition in the resource pack: every distance from 6 to 32. */
+export const FOG_DISTANCES = Array.from({ length: 27 }, (_, i) => i + 6);
+
+/**
+ * Where a fog for LOD distance `d` (chunks) ends, in blocks. The LOD edge is stair-stepped at chunk granularity:
+ * the nearest missing chunk can be ~20 blocks inside d·16, so the fog is complete a little before that.
+ */
+export function fogEnd(d: number): number {
+  return d * 16 - 24;
+}
 
 export const FOG_MODE_HORIZON = 0;
 export const FOG_MODE_VANILLA = 1;
 export const FOG_MODE_ATMOSPHERIC = 2;
 
-/** Fog definition id for a dimension, LOD distance and fog mode, or undefined to keep vanilla fog. */
+/**
+ * Fog definition id for a dimension, the radius (chunks) out to which LOD is actually drawn, and fog mode; undefined
+ * keeps vanilla fog (also when no LOD is drawn, e.g. the real terrain already reaches the LOD distance).
+ */
 export function fogIdFor(dimIndex: number, distanceChunks: number, mode: number): string | undefined {
-  if (mode === FOG_MODE_VANILLA) return undefined;
+  if (mode === FOG_MODE_VANILLA || distanceChunks <= 0) return undefined;
   if (dimIndex !== 0 && dimIndex !== 2) return undefined;
-  let step = FOG_DISTANCES[FOG_DISTANCES.length - 1];
-  for (const d of FOG_DISTANCES) {
-    if (d >= distanceChunks) {
-      step = d;
-      break;
-    }
-  }
+  // Round down: the fog must be complete before the LOD edge, or the edge shows against the sky.
+  const step = Math.max(FOG_DISTANCES[0], Math.min(FOG_DISTANCES[FOG_DISTANCES.length - 1], Math.floor(distanceChunks)));
   const family = dimIndex === 2 ? 'end' : mode === FOG_MODE_ATMOSPHERIC ? 'haze' : 'horizon';
   return `dl:${family}_${step}`;
 }

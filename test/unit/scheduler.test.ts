@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Scheduler } from '../../src/core/scheduler';
-import { fogIdFor, FogManager, FOG_DISTANCES, FOG_USER_ID } from '../../src/core/fog';
+import { fogEnd, fogIdFor, FogManager, FOG_DISTANCES, FOG_USER_ID } from '../../src/core/fog';
 import { formatHud } from '../../src/core/hud';
 import type { HostPlayer } from '../../src/core/types';
 
@@ -81,16 +81,18 @@ test('slice yields between steps', () => {
   assert.ok(yields >= 3 && yields <= 5, `yields ${yields}`);
 });
 
-test('fog ids map distance, mode and dimension', () => {
+test('fog ids map the drawn LOD edge, mode and dimension', () => {
   assert.equal(fogIdFor(0, 24, 0), 'dl:horizon_24');
-  assert.equal(fogIdFor(0, 23, 0), 'dl:horizon_24');
+  assert.equal(fogIdFor(0, 23.7, 0), 'dl:horizon_23', 'rounded down: the fog must be complete before the edge');
   assert.equal(fogIdFor(0, 5, 0), 'dl:horizon_6');
   assert.equal(fogIdFor(0, 40, 0), 'dl:horizon_32');
   assert.equal(fogIdFor(0, 24, 2), 'dl:haze_24');
   assert.equal(fogIdFor(2, 24, 0), 'dl:end_24');
   assert.equal(fogIdFor(1, 24, 0), undefined);
   assert.equal(fogIdFor(0, 24, 1), undefined);
-  assert.deepEqual(FOG_DISTANCES, [6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32]);
+  assert.equal(fogIdFor(0, 0, 0), undefined, 'no LOD drawn: vanilla fog');
+  assert.deepEqual(FOG_DISTANCES, Array.from({ length: 27 }, (_, i) => i + 6));
+  for (const d of FOG_DISTANCES) assert.ok(fogEnd(d) <= d * 16 - 20, 'fog complete before the stair-stepped LOD edge');
 });
 
 test('fog manager removes stale fog once and only issues commands on change', () => {

@@ -177,7 +177,9 @@ offset, lifetime and lighting travel as Molang variables.
 5. **Rendering.** Faces are spawned nearest-first under a per-tick spawn budget. They live for a finite time and
    are refreshed on a rolling schedule, so stale terrain disappears by itself. Every face self-culls the moment the
    client has the real block at its position (`particle_expire_if_in_blocks`), which hands each spot over to
-   vanilla terrain. Fast movement shortens lifetimes ahead of you. A per-player fog is pushed to the LOD distance.
+   vanilla terrain. Fast movement shortens lifetimes ahead of you, and faces that self-culled are sent again as soon
+   as you walk away from that terrain. Each player gets a fog that completes just inside the drawn LOD edge (none
+   when their real terrain already reaches the LOD distance).
 6. **Scheduling.** All work is split into small steps and runs in a cooperative scheduler within the script budget
    (`system.runJob`). Plans are built incrementally while the old plan keeps rendering.
 

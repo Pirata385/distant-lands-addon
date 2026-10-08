@@ -6,7 +6,7 @@
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { EXPIRE_BLOCKS } from '../src/core/palette';
-import { FOG_DISTANCES } from '../src/core/fog';
+import { FOG_DISTANCES, fogEnd } from '../src/core/fog';
 import { MOLANG, EFFECT_TOP, EFFECT_WALL } from '../src/core/types';
 import { SETTINGS_SCHEMA } from '../src/core/settings';
 import { PACK, SETTINGS, GROUPS, PAGES, PRESETS, UI, ITEMS } from './lang-en';
@@ -93,7 +93,7 @@ function fog(id: string, airStart: number, airEnd: number, airColor: string, wea
 
 function fogs(): void {
   for (const d of FOG_DISTANCES) {
-    const end = d * 16 + 8;
+    const end = fogEnd(d);
     write(join(RP, 'fogs', `dl_horizon_${d}.json`), fog(`dl:horizon_${d}`, Math.round(end * 0.62), end, '#ABD2FF', '#666666'));
     write(join(RP, 'fogs', `dl_haze_${d}.json`), fog(`dl:haze_${d}`, Math.round(end * 0.3), end, '#B4CBE8', '#6A6A6A'));
     write(join(RP, 'fogs', `dl_end_${d}.json`), fog(`dl:end_${d}`, Math.round(end * 0.55), end, '#0B080C', '#0B080C'));

@@ -73,6 +73,8 @@ interface PlayerState {
   planEpoch: number;
   planSettings: number;
   planRadius: number;
+  /** Radius (chunks) out to which the committed plan draws LOD; 0 = none. The fog follows it. */
+  lodEdge: number;
   prevCells: Map<string, number>;
   qMult: number;
   adaptTick: number;
@@ -318,6 +320,7 @@ export class App {
       planEpoch: -1,
       planSettings: -1,
       planRadius: -1,
+      lodEdge: 0,
       prevCells: new Map(),
       qMult: 1,
       adaptTick: this.tickNo,
@@ -353,6 +356,7 @@ export class App {
     if (dim.index !== s.dimIndex) {
       s.view.reset();
       s.prevCells.clear();
+      s.lodEdge = 0;
       s.dim = dim;
       s.dimIndex = dim.index;
       s.loadedRadius = 0;
@@ -363,7 +367,8 @@ export class App {
     }
     s.eff = this.settings.effective(s.id);
     s.enabled = s.eff.enabled && this.lodDimension(dim.index);
-    this.fog.apply(s.p, s.enabled ? fogIdFor(dim.index, s.eff.distance, this.settings.num('fogMode')) : undefined);
+    // Fog follows where LOD is actually drawn (none when the real terrain already reaches the LOD distance).
+    this.fog.apply(s.p, s.enabled ? fogIdFor(dim.index, s.lodEdge, this.settings.num('fogMode')) : undefined);
     if (!s.enabled) {
       if (s.wasEnabled) s.view.reset();
       s.wasEnabled = false;
@@ -457,8 +462,11 @@ export class App {
     for (const s of this.states.values()) if (s.enabled && !s.view.paused) active.push(s);
     const n = active.length;
     if (n === 0) return;
-    const share = (budget * 20) / n;
-    const now = this.tickNo / 20;
+    // Particles age in real seconds on the client, so the schedule runs on the wall clock, and a lagging server
+    // (fewer ticks per second) spawns fewer faces per second.
+    const tps = Math.min(20, 1000 / Math.max(1, this.tickIntervalEma));
+    const share = (budget * tps) / n;
+    const now = this.host.clock() / 1000;
     let left = budget;
     const fair = Math.ceil(budget / n);
     for (let pass = 0; pass < 2 && left > 0; pass++) {
@@ -492,11 +500,13 @@ export class App {
       const radius = s.loadedRadius;
       const px = s.pos.x;
       const pz = s.pos.z;
+      const rin = Math.max(0, radius - INNER_OVERLAP);
+      const rout = Math.min(s.eff.distance, MAX_LOD_CHUNKS);
       let tiles = yield* planTiles({
         px,
         pz,
-        rinChunks: Math.max(0, radius - INNER_OVERLAP),
-        routChunks: s.eff.distance,
+        rinChunks: rin,
+        routChunks: rout,
         res: this.res,
         quality: s.eff.quality * s.qMult,
         prev: s.prevCells,
@@ -504,7 +514,12 @@ export class App {
       });
       if (this.states.get(s.id) !== s || s.dimIndex !== dimIndex || !s.enabled) return false;
       // Adaptive quality lowers detail to fit the face budget; without it, the farthest tiles are left out instead.
-      if (!this.settings.flag('adaptive')) tiles = capTiles(tiles, s.eff.maxQuads);
+      let edge = rin < rout ? rout : 0;
+      if (!this.settings.flag('adaptive')) {
+        const capped = capTiles(tiles, s.eff.maxQuads);
+        tiles = capped.tiles;
+        edge = Math.min(edge, capped.edgeChunks);
+      }
       // Build the new plan incrementally (the old one keeps rendering), then swap it in.
       const prev = new Map<string, number>();
       s.view.beginPlan(this.viewParams(s, 1));
@@ -513,7 +528,7 @@ export class App {
         // False when the view was reset meanwhile (LOD toggled, dimension changed): this plan is obsolete.
         if (!s.view.addPlanTile(t, tileSignature(t, this.styleEpoch, this.store, dimIndex))) return false;
         prev.set(t.key, t.cell);
-        if ((++k & 63) === 0) {
+        if ((++k & 31) === 0) {
           yield;
           if (this.states.get(s.id) !== s || s.dimIndex !== dimIndex || !s.enabled) {
             s.view.abortPlan();
@@ -524,6 +539,7 @@ export class App {
       s.view.commitPlan();
       this.sizeMeshCache();
       this.sizeStore();
+      s.lodEdge = edge;
       s.prevCells = prev;
       s.planTick = this.tickNo;
       s.planX = px;

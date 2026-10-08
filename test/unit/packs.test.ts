@@ -75,6 +75,8 @@ test('a fog definition exists for every distance step and family', () => {
     const air = fog.distance.air;
     assert.equal(air.render_distance_type, 'fixed');
     assert.ok(air.fog_start < air.fog_end);
+    const d = Number(/_(\d+)$/.exec(fog.description.identifier)![1]);
+    assert.ok(air.fog_end <= d * 16 - 20, `${fog.description.identifier} ends inside the LOD edge`);
     assert.ok(!('water' in fog.distance), 'water fog stays vanilla');
   }
   for (const d of FOG_DISTANCES) for (const fam of ['horizon', 'haze', 'end']) assert.ok(ids.has(`dl:${fam}_${d}`), `dl:${fam}_${d}`);

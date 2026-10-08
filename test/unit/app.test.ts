@@ -226,3 +226,64 @@ test('block edits in dimensions without LOD are not tracked', () => {
   app.onBlockChanged(0, 5, 5);
   assert.equal(app.store.stats().dirtyChunks, 1);
 });
+
+test('on a lagging server faces are refreshed in real time, before they expire', () => {
+  const host = new FakeHost();
+  const p = host.addPlayer('a', { x: 8, y: 90, z: 8 });
+  const app = new App(host);
+  app.settings.set('maxDistance', 12);
+  app.start();
+  const MS = 100; // 10 ticks per second
+  for (let i = 0; i < 1500; i++) {
+    host.advance(MS);
+    app.tick();
+    const g = app.backgroundSlice();
+    while (!g.next().done);
+  }
+  // Particles age in real seconds on the client; consecutive spawns of a face must overlap in real time.
+  const byFace = new Map<string, { t: number; life: number }[]>();
+  for (const s of p.spawned) {
+    if (s.effect !== EFFECT_TOP) continue;
+    const q = quadTarget(s);
+    const key = `${Math.round(q.x)},${Math.round(q.y)},${Math.round(q.z)}`;
+    const list = byFace.get(key) ?? [];
+    list.push({ t: (s.tick * MS) / 1000, life: s.vars.life });
+    byFace.set(key, list);
+  }
+  let gaps = 0;
+  let checked = 0;
+  for (const list of byFace.values()) {
+    for (let i = 1; i < list.length; i++) {
+      checked++;
+      if (list[i].t > list[i - 1].t + list[i - 1].life) gaps++;
+    }
+  }
+  assert.ok(checked > 100, `${checked} refreshes`);
+  assert.equal(gaps, 0, `${gaps} of ${checked} refreshes came after the faces had expired`);
+});
+
+test('no horizon fog when the real terrain already reaches the LOD distance', () => {
+  const host = new FakeHost();
+  host.viewRadius = 20;
+  const p = host.addPlayer('a', { x: 8, y: 90, z: 8 });
+  const app = new App(host);
+  app.settings.set('maxDistance', 16);
+  app.start();
+  run(host, app, 300);
+  assert.ok(!p.commands.some((c) => c.startsWith('fog @s push')), p.commands.join(' | '));
+  assert.equal(p.spawned.length, 0);
+});
+
+test('with adaptive quality off, the fog follows the LOD edge the face budget allows', () => {
+  const host = new FakeHost();
+  const p = host.addPlayer('a', { x: 8, y: 90, z: 8 });
+  const app = new App(host);
+  app.settings.set('maxDistance', 32);
+  app.settings.set('adaptive', false);
+  app.settings.set('maxQuads', 1000);
+  app.start();
+  run(host, app, 300);
+  const pushes = p.commands.filter((c) => c.startsWith('fog @s push'));
+  const d = Number(/horizon_(\d+)/.exec(pushes[pushes.length - 1] ?? '')?.[1]);
+  assert.ok(d >= 6 && d < 32, `fog ${pushes.join(' | ')}`);
+});

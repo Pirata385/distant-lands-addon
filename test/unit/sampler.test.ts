@@ -74,6 +74,23 @@ test('water records surface height, depth and tinted colour', () => {
   assert.ok(c.b > c.r && c.b > c.g, `water should be blue ${JSON.stringify(c)}`);
 });
 
+test('water plants reaching the surface are sampled as water, and the depth ray looks through them', () => {
+  const dim = flat((x) => {
+    if (x < 8) return [{ y: SEA_LEVEL, typeId: 'minecraft:seagrass' }, { y: SEA_LEVEL - 1, typeId: 'minecraft:sand' }];
+    const blocks = [];
+    for (let y = SEA_LEVEL; y > 54; y--) blocks.push({ y, typeId: 'minecraft:kelp' });
+    blocks.push({ y: 54, typeId: 'minecraft:gravel' });
+    return blocks;
+  });
+  const b = run(dim, 0, 0, 8).lod!.base; // samples at x=4 (seagrass) and x=12 (kelp)
+  for (const k of [0, 1]) {
+    assert.equal(b.height[k], SEA_LEVEL + 1, `sample ${k} at the water surface`);
+    assert.equal(b.flags[k] & F_WATER, F_WATER);
+  }
+  assert.equal(b.depth[0], 1);
+  assert.equal(b.depth[1], SEA_LEVEL - 54, 'depth measured through the kelp');
+});
+
 test('without depth shading no extra raycast is made', () => {
   const dim = flat(() => [{ y: 62, typeId: 'minecraft:water' }, { y: 61, typeId: 'minecraft:sand' }]);
   const { lod } = run(dim, 0, 0, 8, { waterDepth: false, vegetation: VEG_CANOPY });

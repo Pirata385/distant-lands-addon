@@ -7,6 +7,7 @@ import { startWorld, ticks, fake, FakePlayer } from '../sim/harness';
 export { finish } from '../sim/harness';
 import { newFrame, renderSurface, renderQuads, fog, writePng, rayDir, Camera, Quad, Surface, Frame } from './raster';
 import { applyTint, baseColor, isDecoration, rgb } from '../../src/core/palette';
+import { fogEnd } from '../../src/core/fog';
 
 export const OUT = join(import.meta.dirname, '..', '..', 'test-output', 'previews');
 const SKY = 0x9cc3ff;
@@ -173,7 +174,8 @@ export async function renderScene(name: string, yaw: number, pitch: number, eyeL
   await ticks(2000);
   const cam: Camera = { eye: p.getHeadLocation(), yaw, pitch, fov: (70 * Math.PI) / 180, width: 320, height: 180 };
   const surface = truthSurface(dim);
-  const far = 16 * 16 + 8;
+  const far = 16 * 16 + 8; // LOD drawn out to here
+  const fogFar = fogEnd(16); // the add-on's horizon fog is complete here (inside the stair-stepped LOD edge)
   const truth = newFrame(cam.width, cam.height);
   renderSurface(truth, cam, surface, far);
   const seen = newFrame(cam.width, cam.height);
@@ -181,9 +183,9 @@ export async function renderScene(name: string, yaw: number, pitch: number, eyeL
   renderQuads(seen, cam, lodQuads(p));
   const lodOnly = newFrame(cam.width, cam.height);
   renderQuads(lodOnly, cam, lodQuads(p));
-  const truthPx = fog(truth, 0.62 * far, far, FOG, SKY);
-  const seenPx = fog(seen, 0.62 * far, far, FOG, SKY);
-  const lodPx = fog(lodOnly, 0.62 * far, far, FOG, SKY);
+  const truthPx = fog(truth, 0.62 * fogFar, fogFar, FOG, SKY);
+  const seenPx = fog(seen, 0.62 * fogFar, fogFar, FOG, SKY);
+  const lodPx = fog(lodOnly, 0.62 * fogFar, fogFar, FOG, SKY);
   const vanillaFrame = newFrame(cam.width, cam.height);
   renderSurface(vanillaFrame, cam, surface, far, (x, z) => p.clientHas(Math.floor(x / 16), Math.floor(z / 16)));
   const vanillaEnd = p.viewRadius * 16;
@@ -192,7 +194,8 @@ export async function renderScene(name: string, yaw: number, pitch: number, eyeL
   writePng(join(OUT, `${name}-seen.png`), cam.width, cam.height, seenPx);
   writePng(join(OUT, `${name}-lod-only.png`), cam.width, cam.height, lodPx);
   writePng(join(OUT, `${name}-vanilla.png`), cam.width, cam.height, vanillaPx);
-  const m = compare(truth, seen, 7 * 16, 15 * 16, cam, surface);
+  // From just inside the real-terrain edge (LOD starts one chunk inside it) to where the fog hides everything.
+  const m = compare(truth, seen, 88, fogFar, cam, surface);
   writePng(join(OUT, `${name}-diff.png`), cam.width, cam.height, diffImage(seenPx, lastDiff!));
   return { metrics: m, width: cam.width, height: cam.height, truth: truthPx, seen: seenPx, lod: lodPx, vanilla: vanillaPx };
 }

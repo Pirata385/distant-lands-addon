@@ -15,6 +15,7 @@ export interface SamplerOptions {
 
 /** Underwater plants that can be the topmost block of a water column. */
 const WATER_PLANTS = new Set(['minecraft:kelp', 'minecraft:seagrass', 'minecraft:sea_pickle', 'minecraft:bubble_column']);
+const WATER_PLANT_TYPES = [...WATER_PLANTS];
 
 const GROUND_SKIP_TYPES = [
   'minecraft:oak_leaves', 'minecraft:spruce_leaves', 'minecraft:birch_leaves', 'minecraft:jungle_leaves',
@@ -56,7 +57,8 @@ function sampleColumn(dim: HostDimension, x: number, z: number, opts: SamplerOpt
     out.d = 0;
     return;
   }
-  for (let steps = 0; steps < 4 && b && isDecoration(b.typeId); steps++) b = b.below();
+  // Water plants reaching the surface are waterlogged: the column is water (they are decorations otherwise).
+  for (let steps = 0; steps < 4 && b && !WATER_PLANTS.has(b.typeId) && isDecoration(b.typeId); steps++) b = b.below();
   if (!b) {
     out.h = NO_DATA;
     out.f = F_VOID;
@@ -81,7 +83,7 @@ function sampleColumn(dim: HostDimension, x: number, z: number, opts: SamplerOpt
     out.f = F_WATER;
     out.c = isWater(b.typeId) ? blockColor(b) : WATER_FALLBACK;
     if (opts.waterDepth) {
-      const floor = dim.rayDown(x + 0.5, b.y, z + 0.5, MAX_DEPTH_RAY, { liquids: false });
+      const floor = dim.rayDown(x + 0.5, b.y, z + 0.5, MAX_DEPTH_RAY, { liquids: false, skipTypes: WATER_PLANT_TYPES });
       out.d = floor ? Math.max(0, Math.min(63, b.y - floor.y)) : MAX_DEPTH_RAY;
     }
     return;

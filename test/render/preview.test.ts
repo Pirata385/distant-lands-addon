@@ -16,7 +16,8 @@ for (const [name, yaw, pitch, lift, settings] of [
     const m = await scene(name, yaw, pitch, lift, [...settings]);
     console.log(name, JSON.stringify(m));
     assert.ok(m.band > 500, `band pixels ${m.band}`);
-    assert.ok(m.holes / m.band < 0.01, `holes ${((m.holes / m.band) * 100).toFixed(2)}%`);
-    assert.ok(m.floating / m.band < 0.02, `floating ${((m.floating / m.band) * 100).toFixed(2)}%`);
+    // Deterministic scenes (fake runtime, fixed clock): limits lock in the measured state (holes <= 0.2%).
+    assert.ok(m.holes / m.band < 0.005, `holes ${((m.holes / m.band) * 100).toFixed(2)}%`);
+    assert.ok(m.floating / m.band < 0.015, `floating ${((m.floating / m.band) * 100).toFixed(2)}%`);
   });
 }

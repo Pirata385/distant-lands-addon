@@ -63,9 +63,10 @@ export function estimateQuads(tiles: readonly Tile[]): number {
 /**
  * Keeps the nearest tiles whose estimated faces fit `maxQuads` (used when adaptive quality is off, so the face
  * budget still holds: the farthest terrain is left out instead of detail being lowered). Linear time.
+ * `edgeChunks` is how far LOD is complete around the player afterwards (Infinity when nothing was dropped).
  */
-export function capTiles(tiles: Tile[], maxQuads: number): Tile[] {
-  if (estimateQuads(tiles) <= maxQuads) return tiles;
+export function capTiles(tiles: Tile[], maxQuads: number): { tiles: Tile[]; edgeChunks: number } {
+  if (estimateQuads(tiles) <= maxQuads) return { tiles, edgeChunks: Infinity };
   let far = 0;
   for (const t of tiles) if (t.dist > far) far = t.dist;
   // Faces per 16-block distance ring, accumulated nearest first; cut at the first ring that overflows.
@@ -83,7 +84,13 @@ export function capTiles(tiles: Tile[], maxQuads: number): Tile[] {
       break;
     }
   }
-  return tiles.filter((t) => Math.floor(t.dist / 16) < cut);
+  const kept: Tile[] = [];
+  let edge = Infinity;
+  for (const t of tiles) {
+    if (Math.floor(t.dist / 16) < cut) kept.push(t);
+    else edge = Math.min(edge, t.dist - t.size * Math.SQRT1_2); // nearest point of a dropped tile
+  }
+  return { tiles: kept, edgeChunks: Math.max(0, edge / 16) };
 }
 
 /**

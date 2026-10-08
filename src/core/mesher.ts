@@ -147,7 +147,6 @@ export function meshTile(tile: Tile, lookup: CellLookup, style: StyleParams): Fl
       shaded[i + j * n] = color;
       has[i + j * n] = 1;
 
-      if (f & F_WATER) continue;
       // Lowest neighbour surface (8-neighbourhood, lowest samples); no per-cell allocations.
       let hMin = h;
       for (let dj = -w; dj <= w; dj += w) {

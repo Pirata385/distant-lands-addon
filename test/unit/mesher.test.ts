@@ -68,14 +68,16 @@ test('a height step creates walls on the high side with the right height', () =>
   assert.ok(walls[0].g < tops[0].g, 'walls are darker than tops');
 });
 
-test('water never gets walls and missing cells produce nothing', () => {
+test('a lake edge above lower land gets walls; missing cells produce nothing', () => {
   const look = new FnLookup((_s, x, z) => {
     if (z >= 8) return null;
     return x < 8 ? { h: 63, c: rgb(40, 80, 200), f: F_WATER, d: 10 } : { h: 40, c: GREEN, f: 0, d: 0 };
   });
   const q = quads(meshTile(tile(0, 0, 16, 4), look, STYLE));
-  assert.ok(q.every((v) => v.z < 8 || v.kind === K_WALL));
-  assert.equal(q.filter((v) => v.kind === K_WALL).length, 0);
+  assert.ok(q.every((v) => v.z < 8), 'nothing where data is missing');
+  const walls = q.filter((v) => v.kind === K_WALL);
+  assert.equal(walls.length, 2, 'the water cells next to the lower land are closed below');
+  assert.ok(walls.every((v) => v.x === 6), 'on the water side of the edge');
   assert.equal(q.filter((v) => v.kind === K_TOP).length, 2);
 });
 

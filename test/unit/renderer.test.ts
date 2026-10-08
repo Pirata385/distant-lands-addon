@@ -177,6 +177,27 @@ test('a teleport while a tile is half-spawned moves the emitter with the player 
   assert.deepEqual(xs, Array.from({ length: 12 }, (_, i) => 321 + i), 'every quad lands at its world position');
 });
 
+test('a remeshed tile keeps its refresh deadline while new tiles keep the spawn queue busy', () => {
+  const view = new PlayerView();
+  const sink = new RecordingSink();
+  const p = params();
+  const a = tileAt(-960, 0); // behind the player: last in the spawn queue
+  setup(view, [a], p);
+  run(view, sink, p, 1, 10);
+  const many: Tile[] = []; // 1600 new tiles in front of the player: 3200 faces, 160 s at one face per tick
+  for (let i = 0; i < 40; i++) for (let j = 0; j < 40; j++) many.push(tileAt(-320 + i * 16, 96 + j * 16));
+  view.setPlan([a, ...many], (t) => (t.key === a.key ? 'sig-new' : 'sig16'), p);
+  for (;;) {
+    const s = view.nextToMesh();
+    if (!s) break;
+    view.setMesh(s, meshFor(s.tile), s.wantedSig); // `a` gets a new mesh
+  }
+  run(view, sink, p, 30, 1, 1); // one face per tick: the new tiles alone need minutes
+  const tops = sink.spawned.filter((x) => x.kind === K_TOP && Math.round(x.emitter.x + x.vars.ox) === -952);
+  assert.ok(tops.length >= 2, `a spawned ${tops.length} times`);
+  assert.ok(tops[1].t <= tops[0].t + tops[0].vars.life, `respawned at ${tops[1].t}, faces expired at ${tops[0].t + tops[0].vars.life}`);
+});
+
 test('lifetimes stretch when the spawn budget cannot keep up', () => {
   const view = new PlayerView();
   const sink = new RecordingSink();
@@ -262,15 +283,31 @@ test('walls are moved to the cell edge facing the player (no gap behind the step
   assert.equal(top.emitter.x + top.vars.ox, 328, 'tops stay centred');
 });
 
-test('walls of conservative tiles stay centred (they must sit under the real surface)', () => {
+test('walls of conservative tiles also stand at the edge facing the player, as wide as the cell looks', () => {
   const view = new PlayerView();
   const sink = new RecordingSink();
   const p = params({ eye: { x: 0, y: 150, z: 0 } });
-  const t = { ...tileAt(320, 0), conservative: true };
+  const t = { ...tileAt(320, 320), conservative: true }; // seen along the diagonal
+  setup(view, [t], p);
+  run(view, sink, p, 1, 10);
+  const wall = sink.spawned.find((s) => s.kind === K_WALL)!;
+  const wx = wall.emitter.x + wall.vars.ox;
+  const wz = wall.emitter.z + wall.vars.oz;
+  assert.ok(wx < 328 && wz < 328, `wall at ${wx},${wz} moved toward the player`);
+  assert.ok(Math.abs(wall.vars.a - 8 * Math.SQRT2) < 0.01, `half width ${wall.vars.a}: a square seen at 45° is √2 wider`);
+});
+
+test('over real terrain walls stay centred and as wide as the cell, so they self-cull inside its blocks', () => {
+  const view = new PlayerView();
+  const sink = new RecordingSink();
+  const p = params({ eye: { x: 0, y: 150, z: 0 }, innerRadius: 30 * 16 }); // the tile's chunk is loaded
+  const t = { ...tileAt(320, 320), conservative: true };
   setup(view, [t], p);
   run(view, sink, p, 1, 10);
   const wall = sink.spawned.find((s) => s.kind === K_WALL)!;
   assert.equal(wall.emitter.x + wall.vars.ox, 328);
+  assert.equal(wall.emitter.z + wall.vars.oz, 328);
+  assert.equal(wall.vars.a, 8);
 });
 
 test('plans can be built incrementally while the old plan keeps rendering', () => {

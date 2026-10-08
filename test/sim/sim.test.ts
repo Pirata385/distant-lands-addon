@@ -72,6 +72,23 @@ test('sprinting keeps the horizon ahead filled with almost no floating faces', a
   healthy(p);
 });
 
+test('walking away leaves no holes behind the player (self-culled faces are sent again)', async () => {
+  await world({ viewRadius: 6 });
+  const p = fake.join('walker', { x: 8, y: 100, z: 8 });
+  fake.scriptEvent(undefined, 'dl:set', 'maxDistance=16');
+  await ticks(1200);
+  let worst = 1;
+  for (let s = 0; s < 6; s++) {
+    await ticks(100, () => {
+      p.location = { ...p.location, x: p.location.x + 0.215 }; // walking speed
+      p.viewDirection = { x: 1, y: 0, z: 0 };
+    });
+    worst = Math.min(worst, coverage(p, 6, 9, (dx) => dx < 0).ratio);
+  }
+  assert.ok(worst >= 0.9, `coverage behind the player dropped to ${(worst * 100).toFixed(0)}%`);
+  healthy(p);
+});
+
 test('fast elytra flight never errors and the horizon recovers after landing', async () => {
   await world({ viewRadius: 8 });
   const p = fake.join('glider', { x: 8, y: 200, z: 8 });
